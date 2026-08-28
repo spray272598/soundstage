@@ -49,7 +49,7 @@ func (h *MiclinkHandler) Register(r *gin.Engine) {
 // --- co-host ---
 
 type micRequestRequest struct {
-	HostID string `json:"host_id" binding:"required"`
+	HostID  string `json:"host_id" binding:"required"`
 	GuestID string `json:"guest_id" binding:"required"`
 }
 
@@ -68,7 +68,7 @@ func (h *MiclinkHandler) micRequest(c *gin.Context) {
 }
 
 type micAcceptRequest struct {
-	HostID string `json:"host_id" binding:"required"`
+	HostID  string `json:"host_id" binding:"required"`
 	GuestID string `json:"guest_id" binding:"required"`
 }
 
@@ -97,8 +97,8 @@ func (h *MiclinkHandler) micClose(c *gin.Context) {
 // --- PK ---
 
 type pkChallengeRequest struct {
-	OpponentRoomID string `json:"opponent_room_id" binding:"required"`
-	AnchorID       string `json:"anchor_id" binding:"required"`
+	OpponentRoomID   string `json:"opponent_room_id" binding:"required"`
+	AnchorID         string `json:"anchor_id" binding:"required"`
 	OpponentAnchorID string `json:"opponent_anchor_id" binding:"required"`
 }
 

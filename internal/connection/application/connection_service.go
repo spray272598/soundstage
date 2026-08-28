@@ -7,8 +7,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/spray272598/soundstage/internal/connection/domain"
-	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/event"
+	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
 	"go.uber.org/zap"

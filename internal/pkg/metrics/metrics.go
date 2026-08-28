@@ -139,7 +139,7 @@ var (
 		Namespace: "soundstage",
 		Name:      "ai_llm_latency_seconds",
 		Help:      "LLM call latency in seconds",
-		Buckets:  []float64{0.2, 0.5, 1, 2, 5, 10, 30},
+		Buckets:   []float64{0.2, 0.5, 1, 2, 5, 10, 30},
 	}, []string{"kind"})
 )
 

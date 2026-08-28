@@ -180,6 +180,12 @@ func (l *Loop) systemPrompt(roomID, userID string) string {
 // parseToolCallsFromContent extracts tool calls from a model response that
 // returns JSON (object or array) instead of native function calls. Used by the
 // offline mock gateway and any provider without native tool support.
+//
+// It tolerates the common shapes providers emit:
+//   - {"name": "...", "args": {...}}                       (object args)
+//   - {"name": "...", "arguments": {...}}                  (object arguments)
+//   - {"name": "...", "arguments": "{...}"}               (string arguments, as the
+//     canonical ai domain ToolCall marshals its Arguments field)
 func parseToolCallsFromContent(content string) []aidomain.ToolCall {
 	content = strings.TrimSpace(content)
 	if content == "" {
@@ -196,26 +202,50 @@ func parseToolCallsFromContent(content string) []aidomain.ToolCall {
 		}
 	}
 
-	var single struct {
-		Name string         `json:"name"`
-		Args map[string]any `json:"args"`
+	type parsed struct {
+		Name      string         `json:"name"`
+		Args      map[string]any `json:"args"`
+		Arguments any            `json:"arguments"`
 	}
-	if err := json.Unmarshal([]byte(content), &single); err == nil && single.Name != "" {
-		rawArgs, _ := json.Marshal(single.Args)
-		return []aidomain.ToolCall{{Name: single.Name, Arguments: string(rawArgs)}}
+	toCall := func(p parsed) (aidomain.ToolCall, bool) {
+		if p.Name == "" {
+			return aidomain.ToolCall{}, false
+		}
+		var m map[string]any
+		switch {
+		case p.Args != nil:
+			m = p.Args
+		case p.Arguments != nil:
+			switch v := p.Arguments.(type) {
+			case map[string]any:
+				m = v
+			case string:
+				// Double-encoded: the arguments field is a JSON string.
+				_ = json.Unmarshal([]byte(v), &m)
+			}
+		}
+		raw, _ := json.Marshal(m)
+		return aidomain.ToolCall{Name: p.Name, Arguments: string(raw)}, true
 	}
 
-	var multi []struct {
-		Name string         `json:"name"`
-		Args map[string]any `json:"args"`
-	}
-	if err := json.Unmarshal([]byte(content), &multi); err == nil && len(multi) > 0 && multi[0].Name != "" {
-		out := make([]aidomain.ToolCall, 0, len(multi))
-		for _, m := range multi {
-			rawArgs, _ := json.Marshal(m.Args)
-			out = append(out, aidomain.ToolCall{Name: m.Name, Arguments: string(rawArgs)})
+	var single parsed
+	if err := json.Unmarshal([]byte(content), &single); err == nil {
+		if c, ok := toCall(single); ok {
+			return []aidomain.ToolCall{c}
 		}
-		return out
+	}
+
+	var multi []parsed
+	if err := json.Unmarshal([]byte(content), &multi); err == nil && len(multi) > 0 {
+		out := make([]aidomain.ToolCall, 0, len(multi))
+		for _, p := range multi {
+			if c, ok := toCall(p); ok {
+				out = append(out, c)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
 	}
 	return nil
 }

@@ -8,11 +8,11 @@ import (
 
 // MicLinkModel is the GORM representation of a co-host session.
 type MicLinkModel struct {
-	ID        string     `gorm:"primaryKey;size:32"`
-	RoomID    string     `gorm:"index:idx_miclink_room;size:32"`
-	HostID    string     `gorm:"size:32"`
-	GuestID   string     `gorm:"size:32"`
-	Status    string     `gorm:"index:idx_miclink_room;size:16"`
+	ID        string `gorm:"primaryKey;size:32"`
+	RoomID    string `gorm:"index:idx_miclink_room;size:32"`
+	HostID    string `gorm:"size:32"`
+	GuestID   string `gorm:"size:32"`
+	Status    string `gorm:"index:idx_miclink_room;size:16"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	ClosedAt  *time.Time

@@ -51,8 +51,8 @@ func (h *InteractionHandler) listGifts(c *gin.Context) {
 }
 
 type sendDanmakuRequest struct {
-	Text     string `json:"text" binding:"required"`
-	UserID   string `json:"user_id"`
+	Text   string `json:"text" binding:"required"`
+	UserID string `json:"user_id"`
 }
 
 func (h *InteractionHandler) sendDanmaku(c *gin.Context) {

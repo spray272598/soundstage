@@ -8,18 +8,18 @@ import (
 
 // Config is the root configuration object.
 type Config struct {
-	App       AppConfig       `mapstructure:"app"`
-	HTTP      HTTPConfig      `mapstructure:"http"`
-	WebSocket WebSocketConfig `mapstructure:"websocket"`
-	MySQL     MySQLConfig     `mapstructure:"mysql"`
-	Redis     RedisConfig     `mapstructure:"redis"`
-	Kafka      KafkaConfig      `mapstructure:"kafka"`
-	Asynq      AsynqConfig      `mapstructure:"asynq"`
+	App         AppConfig         `mapstructure:"app"`
+	HTTP        HTTPConfig        `mapstructure:"http"`
+	WebSocket   WebSocketConfig   `mapstructure:"websocket"`
+	MySQL       MySQLConfig       `mapstructure:"mysql"`
+	Redis       RedisConfig       `mapstructure:"redis"`
+	Kafka       KafkaConfig       `mapstructure:"kafka"`
+	Asynq       AsynqConfig       `mapstructure:"asynq"`
 	Interaction InteractionConfig `mapstructure:"interaction"`
 	MicLink     MicLinkConfig     `mapstructure:"miclink"`
-	Metrics     MetricsConfig    `mapstructure:"metrics"`
-	Log        LogConfig        `mapstructure:"log"`
-	AI         AIConfig         `mapstructure:"ai"`
+	Metrics     MetricsConfig     `mapstructure:"metrics"`
+	Log         LogConfig         `mapstructure:"log"`
+	AI          AIConfig          `mapstructure:"ai"`
 }
 
 // AppConfig holds application metadata.

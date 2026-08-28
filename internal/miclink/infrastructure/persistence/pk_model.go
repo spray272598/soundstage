@@ -8,17 +8,17 @@ import (
 
 // PKSessionModel is the GORM representation of a cross-room PK battle.
 type PKSessionModel struct {
-	ID         string    `gorm:"primaryKey;size:32"`
-	RoomAID    string    `gorm:"index:idx_pk_room_a;size:32"`
-	RoomBID    string    `gorm:"index:idx_pk_room_b;size:32"`
-	AnchorAID  string    `gorm:"size:32"`
-	AnchorBID  string    `gorm:"size:32"`
-	Status     string    `gorm:"index:idx_pk_status;size:16"`
+	ID         string `gorm:"primaryKey;size:32"`
+	RoomAID    string `gorm:"index:idx_pk_room_a;size:32"`
+	RoomBID    string `gorm:"index:idx_pk_room_b;size:32"`
+	AnchorAID  string `gorm:"size:32"`
+	AnchorBID  string `gorm:"size:32"`
+	Status     string `gorm:"index:idx_pk_status;size:16"`
 	ScoreA     int64
 	ScoreB     int64
 	StartedAt  *time.Time
 	EndsAt     *time.Time
-	Winner     string    `gorm:"size:8"`
+	Winner     string `gorm:"size:8"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	FinishedAt *time.Time

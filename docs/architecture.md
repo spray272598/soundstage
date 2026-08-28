@@ -164,3 +164,10 @@ Each bounded context keeps its `domain` package free of infrastructure imports.
 Repositories, message producers, AI clients, and caches are defined as interfaces
 in `domain` and implemented in `infrastructure`. The `app` package wires everything
 together at startup.
+
+## Documentation
+
+- [`docs/api-reference.md`](api-reference.md) — every REST/SSE endpoint and agent tool.
+- [`docs/observability.md`](observability.md) — metrics, Grafana dashboard, alert rules, load test.
+- [`docs/demo.md`](demo.md) — step-by-step walkthrough (Phase 1 → 5).
+- `README.md` — project overview, quick start, repository layout.

@@ -11,10 +11,10 @@ import (
 
 // Deps bundles every port the miclink task handlers need.
 type Deps struct {
-	PKs        domain.PKSessionRepository
+	PKs         domain.PKSessionRepository
 	Broadcaster domain.Broadcaster
-	Locker     domain.Locker
-	RDB        *redis.Client
+	Locker      domain.Locker
+	RDB         *redis.Client
 }
 
 // Register installs the miclink handlers on the shared asynq mux.

@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/segmentio/kafka-go"
-	"github.com/spray272598/soundstage/internal/pkg/logger"
 	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
+	"github.com/spray272598/soundstage/internal/pkg/logger"
 	"go.uber.org/zap"
 )
 
