@@ -96,6 +96,51 @@ var (
 		Name:      "signaling_relayed_total",
 		Help:      "WebRTC signaling messages relayed by the miclink context",
 	})
+
+	// AIModerationTotal counts danmaku moderation calls handled by the AI
+	// moderator, labelled by decision (allowed/rejected/error) and path
+	// (keyword/llm) so we can see how often the LLM audit fires.
+	AIModerationTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "ai_moderation_total",
+		Help:      "AI room-moderator moderation calls by decision and path",
+	}, []string{"decision", "path"})
+
+	// AIAgentRunsTotal counts agent (ReAct) runs by outcome.
+	AIAgentRunsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "ai_agent_runs_total",
+		Help:      "AI agent tool-calling runs by outcome",
+	}, []string{"outcome"})
+
+	// AIToolCallsTotal counts tool invocations by tool name and result.
+	AIToolCallsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "ai_tool_calls_total",
+		Help:      "AI agent tool invocations by tool and result",
+	}, []string{"tool", "result"})
+
+	// AIRagQueriesTotal counts RAG knowledge-base queries by hit (found/miss).
+	AIRagQueriesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "ai_rag_queries_total",
+		Help:      "RAG knowledge-base queries by retrieval result",
+	}, []string{"result"})
+
+	// AISSEConnections is the current number of open AI chat SSE streams.
+	AISSEConnections = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "soundstage",
+		Name:      "ai_sse_connections",
+		Help:      "Active AI chat SSE connections",
+	})
+
+	// AILatencySeconds observes LLM call latency.
+	AILatencySeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "soundstage",
+		Name:      "ai_llm_latency_seconds",
+		Help:      "LLM call latency in seconds",
+		Buckets:  []float64{0.2, 0.5, 1, 2, 5, 10, 30},
+	}, []string{"kind"})
 )
 
 func init() {
@@ -111,5 +156,11 @@ func init() {
 		PKSessionsTotal,
 		PKScoreTotal,
 		SignalingRelayedTotal,
+		AIModerationTotal,
+		AIAgentRunsTotal,
+		AIToolCallsTotal,
+		AIRagQueriesTotal,
+		AISSEConnections,
+		AILatencySeconds,
 	)
 }

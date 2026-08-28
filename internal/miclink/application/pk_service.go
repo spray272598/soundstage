@@ -222,6 +222,17 @@ func (s *PKService) GetState(ctx context.Context, sessionID string) (*domain.PKS
 	return s.pkRepo.GetByID(ctx, sessionID)
 }
 
+// GetStateByRoom returns the active PK battle involving roomID, or nil when the
+// room is not currently battling. Used by read-only queries (e.g. the AI room
+// moderator status tool).
+func (s *PKService) GetStateByRoom(ctx context.Context, roomID string) (*domain.PKSession, error) {
+	pk, err := s.pkRepo.GetActiveByRoom(ctx, roomID)
+	if err == domain.ErrPKNotFound {
+		return nil, nil
+	}
+	return pk, err
+}
+
 // loadParticipant loads a session and verifies the room is a participant.
 func (s *PKService) loadParticipant(ctx context.Context, sessionID, roomID string) (*domain.PKSession, error) {
 	pk, err := s.pkRepo.GetByID(ctx, sessionID)
@@ -252,11 +263,11 @@ func pkStateBroadcast(pk *domain.PKSession) json.RawMessage {
 
 func pkInviteBroadcast(pk *domain.PKSession) json.RawMessage {
 	b, _ := json.Marshal(struct {
-		SessionID string `json:"session_id"`
-		FromRoom  string `json:"from_room"`
+		SessionID  string `json:"session_id"`
+		FromRoom   string `json:"from_room"`
 		FromAnchor string `json:"from_anchor"`
-		ToRoom    string `json:"to_room"`
-		ToAnchor  string `json:"to_anchor"`
+		ToRoom     string `json:"to_room"`
+		ToAnchor   string `json:"to_anchor"`
 	}{SessionID: pk.ID, FromRoom: pk.RoomAID, FromAnchor: pk.AnchorAID, ToRoom: pk.RoomBID, ToAnchor: pk.AnchorBID})
 	return b
 }

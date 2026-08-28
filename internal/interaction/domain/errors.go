@@ -10,6 +10,8 @@ var (
 	ErrGiftInactive = errors.New("gift is not active")
 	// ErrRateLimited is returned when a user exceeds the danmaku rate limit.
 	ErrRateLimited = errors.New("rate limited")
+	// ErrMuted is returned when a muted user attempts to send a danmaku.
+	ErrMuted = errors.New("user is muted")
 	// ErrRejected is returned when a message is blocked by the moderator.
 	ErrRejected = errors.New("message rejected by moderator")
 	// ErrOrderNotFound is returned when a gift order id is unknown.

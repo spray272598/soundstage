@@ -103,13 +103,31 @@ type LogConfig struct {
 	Format string `mapstructure:"format"`
 }
 
-// AIConfig holds the AI provider configuration.
+// AIConfig holds the AI provider configuration for the AI room moderator.
 type AIConfig struct {
 	Provider       string `mapstructure:"provider"`
 	BaseURL        string `mapstructure:"base_url"`
 	Model          string `mapstructure:"model"`
 	APIKey         string `mapstructure:"api_key"`
 	MockOnEmptyKey bool   `mapstructure:"mock_on_empty_key"`
+
+	// EmbeddingModel / EmbeddingBaseURL configure the OpenAI-compatible
+	// embedding endpoint used by the RAG knowledge base. When empty they fall
+	// back to sensible defaults in the infrastructure layer.
+	EmbeddingModel   string `mapstructure:"embedding_model"`
+	EmbeddingBaseURL string `mapstructure:"embedding_base_url"`
+
+	// ModerationKeywords is a cheap first-line keyword blocklist. The AI
+	// moderator still runs an LLM audit, but messages matching these keywords
+	// are rejected before any LLM call to save latency and cost.
+	ModerationKeywords []string `mapstructure:"moderation_keywords"`
+
+	// RagTopK is how many knowledge chunks to retrieve per query.
+	RagTopK int `mapstructure:"rag_top_k"`
+	// AgentMaxRounds caps the ReAct tool-calling loop to avoid runaway runs.
+	AgentMaxRounds int `mapstructure:"agent_max_rounds"`
+	// AgentTimeout caps a single agent run.
+	AgentTimeout time.Duration `mapstructure:"agent_timeout"`
 }
 
 // Load reads configuration from the given file and environment.

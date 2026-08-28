@@ -224,3 +224,91 @@ curl http://127.0.0.1:8080/api/v1/rooms/$ROOM_A/pk/$PK_ID
 - `soundstage_signaling_relayed_total`
 - `soundstage_asynq_task_enqueued_total{type="miclink:pk_settle|miclink:pk_countdown"}`
 
+## Step 8: AI room moderator (Phase 4)
+
+The moderator is on by default. With no `ai.api_key` configured it runs in
+**mock mode** (keyword fast-path + offline agent), so every command below works
+without any external API. Set `ai.api_key` (or `SOUNDSTAGE_AI_API_KEY`) for real
+LLM audit, RAG embeddings, and genuine tool reasoning.
+
+### 8.1 Health
+
+```bash
+curl http://127.0.0.1:8080/ai/health
+# {"mode":"mock","model":"mock"}   (or "llm" with a configured key)
+```
+
+### 8.2 Danmaku audit (replaces keyword moderation)
+
+Send a danmaku with a blocked keyword — it is rejected and never broadcast:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/danmaku \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user001","text":"buy my 广告 now"}'
+# -> 409, ErrRejected (blocked by keyword fast-path)
+```
+
+In LLM mode the same endpoint runs a semantic audit; the moderation decision is
+labeled by path in metrics (`soundstage_ai_moderation_total{decision,path}`).
+
+### 8.3 SSE smart reply (conversational)
+
+Stream a chat with the AI room moderator. It may call tools (`get_room_status`,
+`get_leaderboard`, `get_room_rules`, `mute_user`, `send_announcement`) and stream
+`text_delta` / `tool_call` / `tool_result` / `done` events:
+
+```bash
+curl -N "http://127.0.0.1:8080/rooms/$ROOM_ID/ai/chat?user_id=host&message=现在直播间多少人？"
+```
+
+In mock mode the moderator answers from its built-in rulebook and can simulate a
+tool call (e.g. status/leaderboard/mute/announce) without a key.
+
+### 8.4 Contextual auto-reply
+
+```bash
+curl -X POST http://127.0.0.1:8080/rooms/$ROOM_ID/ai/auto-reply \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user002","content":"主播今晚唱什么歌？"}'
+# {"reply":"..."}
+```
+
+### 8.5 RAG knowledge base
+
+The default room rules/FAQ are seeded at startup. Extend them at runtime:
+
+```bash
+curl -X POST http://127.0.0.1:8080/ai/knowledge \
+  -H "Content-Type: application/json" \
+  -d '{"title":"新规则","text":"每晚 10 点后进行点歌环节，欢迎弹幕点歌。"}'
+```
+
+After ingestion, asking the moderator about the new rule will retrieve this chunk.
+
+### 8.6 Agent tool-calling: mute a viewer
+
+Ask the moderator to mute someone (mock or real mode) — it invokes `mute_user`
+and the viewer's subsequent danmaku is rejected by `InterService`:
+
+```bash
+curl -N "http://127.0.0.1:8080/rooms/$ROOM_ID/ai/chat?user_id=host&message=把 user002 禁言 5 分钟"
+```
+
+```bash
+# This danmaku from the muted user is now rejected.
+curl -X POST http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/danmaku \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user002","text":"hello?"}'
+# -> 409, ErrMuted
+```
+
+### Observability for the AI context
+
+- `soundstage_ai_moderation_total{decision="allowed|rejected",path="keyword|llm|llm_error"}`
+- `soundstage_ai_agent_runs_total{outcome="ok|error|canceled"}`
+- `soundstage_ai_tool_calls_total{tool="get_room_status|get_leaderboard|get_room_rules|mute_user|send_announcement",result="ok|error|unknown"}`
+- `soundstage_ai_rag_queries_total{result="found|miss"}`
+- `soundstage_ai_sse_connections` (gauge)
+- `soundstage_ai_llm_latency_seconds{kind="agent"}` (histogram)
+

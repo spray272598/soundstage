@@ -24,16 +24,17 @@ type InterServiceConfig struct {
 // WebSocket ingest path (via Kafka) and the REST path call into it, so the
 // moderation, rate-limiting and broadcasting logic lives in exactly one place.
 type InterService struct {
-	gifts      domain.GiftRepository
-	orders     domain.GiftOrderRepository
-	danmaku    domain.DanmakuRepository
-	moderator  domain.Moderator
-	limiter    domain.RateLimiter
-	rank       domain.RankStore
-	likes      domain.LikeCounter
+	gifts       domain.GiftRepository
+	orders      domain.GiftOrderRepository
+	danmaku     domain.DanmakuRepository
+	moderator   domain.Moderator
+	limiter     domain.RateLimiter
+	muter       domain.Muter
+	rank        domain.RankStore
+	likes       domain.LikeCounter
 	broadcaster domain.Broadcaster
-	tasks      domain.TaskEnqueuer
-	cfg        InterServiceConfig
+	tasks       domain.TaskEnqueuer
+	cfg         InterServiceConfig
 }
 
 // NewInterService constructs an InterService from its ports.
@@ -43,6 +44,7 @@ func NewInterService(
 	danmaku domain.DanmakuRepository,
 	moderator domain.Moderator,
 	limiter domain.RateLimiter,
+	muter domain.Muter,
 	rank domain.RankStore,
 	likes domain.LikeCounter,
 	broadcaster domain.Broadcaster,
@@ -50,16 +52,17 @@ func NewInterService(
 	cfg InterServiceConfig,
 ) *InterService {
 	return &InterService{
-		gifts:      gifts,
-		orders:     orders,
-		danmaku:    danmaku,
-		moderator:  moderator,
-		limiter:    limiter,
-		rank:       rank,
-		likes:      likes,
+		gifts:       gifts,
+		orders:      orders,
+		danmaku:     danmaku,
+		moderator:   moderator,
+		limiter:     limiter,
+		muter:       muter,
+		rank:        rank,
+		likes:       likes,
 		broadcaster: broadcaster,
-		tasks:      tasks,
-		cfg:        cfg,
+		tasks:       tasks,
+		cfg:         cfg,
 	}
 }
 
@@ -74,6 +77,18 @@ func (s *InterService) ProcessDanmaku(ctx context.Context, roomID, userID, conte
 	if !allowed {
 		metrics.InteractionDanmakuTotal.WithLabelValues("rejected").Inc()
 		return nil, domain.ErrRateLimited
+	}
+
+	// A muted user's messages are dropped before moderation/broadcast. The AI
+	// room moderator drives this via the Muter port.
+	if s.muter != nil {
+		muted, merr := s.muter.IsMuted(ctx, roomID, userID)
+		if merr != nil {
+			logger.L().Warn("mute check failed", zap.Error(merr))
+		} else if muted {
+			metrics.InteractionDanmakuTotal.WithLabelValues("rejected").Inc()
+			return nil, domain.ErrMuted
+		}
 	}
 
 	decision, err := s.moderator.Moderate(ctx, content)
@@ -138,11 +153,11 @@ func (s *InterService) ProcessGift(ctx context.Context, roomID, senderID, giftID
 	}
 
 	payload, err := json.Marshal(giftBroadcast{
-		OrderID:    order.ID,
-		SenderID:   senderID,
-		GiftID:     gift.ID,
-		GiftName:   gift.Name,
-		Count:      count,
+		OrderID:     order.ID,
+		SenderID:    senderID,
+		GiftID:      gift.ID,
+		GiftName:    gift.Name,
+		Count:       count,
 		TotalAmount: order.TotalAmount,
 	})
 	if err == nil {

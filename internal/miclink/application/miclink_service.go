@@ -33,6 +33,16 @@ func NewMicLinkService(
 	}
 }
 
+// GetState returns the active co-host session for a room, or nil when none is
+// live. Used by read-only queries (e.g. the AI room moderator status tool).
+func (s *MicLinkService) GetState(ctx context.Context, roomID string) (*domain.MicLink, error) {
+	link, err := s.micRepo.GetActiveByRoom(ctx, roomID)
+	if err == domain.ErrMicLinkNotFound {
+		return nil, nil
+	}
+	return link, err
+}
+
 // Request opens a requesting co-host session and notifies the host. The guest
 // (audience member) initiates; the host (room anchor) receives the request.
 func (s *MicLinkService) Request(ctx context.Context, roomID, hostID, guestID string) (*domain.MicLink, error) {

@@ -26,6 +26,19 @@ type RateLimiter interface {
 	Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, error)
 }
 
+// Muter enforces temporary chat bans inside a room. A muted user's danmaku is
+// rejected before moderation/broadcast. The AI room moderator (Phase 4) drives
+// this through the ai domain's RoomModerator port, keeping the two contexts
+// decoupled; this is the interaction-side implementation.
+type Muter interface {
+	// Mute silences userID in roomID for the given duration (TTL in Redis).
+	Mute(ctx context.Context, roomID, userID string, duration time.Duration) error
+	// Unmute lifts an active mute early.
+	Unmute(ctx context.Context, roomID, userID string) error
+	// IsMuted reports whether userID is currently muted in roomID.
+	IsMuted(ctx context.Context, roomID, userID string) (bool, error)
+}
+
 // RankEntry is one row of a gift leaderboard.
 type RankEntry struct {
 	UserID string

@@ -60,3 +60,11 @@ ai:
   model: "gpt-4o-mini"
   api_key: "" # set via env SOUNDSTAGE_AI_API_KEY
   mock_on_empty_key: true
+  embedding_model: "text-embedding-3-small"
+  embedding_base_url: "https://api.openai.com/v1"
+  moderation_keywords:
+    - "广告"
+    - "spam"
+  rag_top_k: 3
+  agent_max_rounds: 8
+  agent_timeout: 60s

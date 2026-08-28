@@ -8,29 +8,33 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	aiapplication "github.com/spray272598/soundstage/internal/ai/application"
+	aiagent "github.com/spray272598/soundstage/internal/ai/infrastructure/agent"
+	aillm "github.com/spray272598/soundstage/internal/ai/infrastructure/llm"
+	airag "github.com/spray272598/soundstage/internal/ai/infrastructure/rag"
+	aitransport "github.com/spray272598/soundstage/internal/ai/transport"
 	"github.com/spray272598/soundstage/internal/connection/application"
 	connDomain "github.com/spray272598/soundstage/internal/connection/domain"
 	conninfra "github.com/spray272598/soundstage/internal/connection/infrastructure"
 	conntransport "github.com/spray272598/soundstage/internal/connection/transport"
+	"github.com/spray272598/soundstage/internal/infrastructure/kafka"
 	interactionapp "github.com/spray272598/soundstage/internal/interaction/application"
+	asynqworker "github.com/spray272598/soundstage/internal/interaction/infrastructure/asynqworker"
 	interactioncache "github.com/spray272598/soundstage/internal/interaction/infrastructure/cache"
-	interactionmod "github.com/spray272598/soundstage/internal/interaction/infrastructure/moderation"
 	interactionmsg "github.com/spray272598/soundstage/internal/interaction/infrastructure/messaging"
 	interactionpersist "github.com/spray272598/soundstage/internal/interaction/infrastructure/persistence"
-	asynqworker "github.com/spray272598/soundstage/internal/interaction/infrastructure/asynqworker"
 	interactiontask "github.com/spray272598/soundstage/internal/interaction/task"
 	interactiontransport "github.com/spray272598/soundstage/internal/interaction/transport"
 	miclinkapp "github.com/spray272598/soundstage/internal/miclink/application"
-	miclinkcache "github.com/spray272598/soundstage/internal/miclink/infrastructure/cache"
-	miclinkpersist "github.com/spray272598/soundstage/internal/miclink/infrastructure/persistence"
-	miclinkmsg "github.com/spray272598/soundstage/internal/miclink/infrastructure/messaging"
 	miclinkworker "github.com/spray272598/soundstage/internal/miclink/infrastructure/asynqworker"
+	miclinkcache "github.com/spray272598/soundstage/internal/miclink/infrastructure/cache"
+	miclinkmsg "github.com/spray272598/soundstage/internal/miclink/infrastructure/messaging"
+	miclinkpersist "github.com/spray272598/soundstage/internal/miclink/infrastructure/persistence"
 	miclinktransport "github.com/spray272598/soundstage/internal/miclink/transport"
-	"github.com/spray272598/soundstage/internal/infrastructure/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/config"
+	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
-	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/redis"
 	roomapp "github.com/spray272598/soundstage/internal/room/application"
 	roompersist "github.com/spray272598/soundstage/internal/room/infrastructure/persistence"
@@ -42,24 +46,25 @@ import (
 
 // Application holds the runtime dependencies of the modular monolith.
 type Application struct {
-	Config    *config.Config
-	DB        *gorm.DB
-	Redis     *redis.Client
-	Hub       connDomain.Hub
-	Producer  pkgkafka.Producer
-	Consumer  pkgkafka.Consumer
-	Asynq     *asynq.Client
+	Config       *config.Config
+	DB           *gorm.DB
+	Redis        *redis.Client
+	Hub          connDomain.Hub
+	Producer     pkgkafka.Producer
+	Consumer     pkgkafka.Consumer
+	Asynq        *asynq.Client
 	RoomHandler  *roomtransport.RoomHandler
 	WSHandler    *conntransport.WSHandler
 	InterHandler *interactiontransport.InteractionHandler
 	MicHandler   *miclinktransport.MiclinkHandler
+	AIHandler    *aitransport.Handler
 
-	ingestConsumer    *interactionapp.IngestConsumer
-	miclinkConsumer   *kafka.Consumer
-	miclinkIngest     *miclinkapp.MiclinkIngestConsumer
-	asynqMux          *asynq.ServeMux
-	asynqServer       *asynq.Server
-	scheduler         *asynq.Scheduler
+	ingestConsumer  *interactionapp.IngestConsumer
+	miclinkConsumer *kafka.Consumer
+	miclinkIngest   *miclinkapp.MiclinkIngestConsumer
+	asynqMux        *asynq.ServeMux
+	asynqServer     *asynq.Server
+	scheduler       *asynq.Scheduler
 }
 
 // New builds and wires the application.
@@ -92,34 +97,10 @@ func New(cfg *config.Config) (*Application, error) {
 	wsHandler := conntransport.NewWSHandler(connSvc)
 	consumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-gateway")
 
-	// --- interaction context ---
-	giftRepo := interactionpersist.NewGormGiftRepository(db)
-	orderRepo := interactionpersist.NewGormGiftOrderRepository(db)
-	danmakuRepo := interactionpersist.NewGormDanmakuRepository(db)
-	roomStatsRepo := interactionpersist.NewGormRoomStatsRepository(db)
-
-	rankStore := interactioncache.NewRedisRankStore(rdb)
-	likeCounter := interactioncache.NewRedisLikeCounter(rdb)
-	rateLimiter := interactioncache.NewRedisRateLimiter(rdb)
-	moderator := interactionmod.NewKeywordModerator(cfg.Interaction.ModerationKeywords)
-	broadcaster := interactionmsg.NewKafkaBroadcaster(producer, broadcastTopic)
-
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Asynq.RedisAddr})
-	enqueuer := interactionmsg.NewAsynqTaskEnqueuer(asynqClient)
-
-	interSvc := interactionapp.NewInterService(
-		giftRepo, orderRepo, danmakuRepo,
-		moderator, rateLimiter, rankStore, likeCounter,
-		broadcaster, enqueuer,
-		interactionapp.InterServiceConfig{
-			DanmakuRateLimit:  cfg.Interaction.DanmakuRateLimit,
-			DanmakuRateWindow: cfg.Interaction.DanmakuRateWindow,
-		},
-	)
-	interHandler := interactiontransport.NewInteractionHandler(interSvc)
-	ingestConsumer := interactionapp.NewIngestConsumer(interSvc)
 
 	// --- miclink context (co-host + cross-room PK) ---
+	// Built before interaction so the AI moderator can read room/PK state.
 	micRepo := miclinkpersist.NewGormMicLinkRepository(db)
 	pkRepo := miclinkpersist.NewGormPKSessionRepository(db)
 	micBroadcaster := miclinkmsg.NewKafkaBroadcaster(producer, broadcastTopic)
@@ -142,6 +123,57 @@ func New(cfg *config.Config) (*Application, error) {
 	miclinkIngest := miclinkapp.NewMiclinkIngestConsumer(micSvc, pkSvc)
 	miclinkConsumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-miclink")
 
+	// --- shared interaction infra (also used by the AI moderator) ---
+	broadcaster := interactionmsg.NewKafkaBroadcaster(producer, broadcastTopic)
+	rankStore := interactioncache.NewRedisRankStore(rdb)
+	likeCounter := interactioncache.NewRedisLikeCounter(rdb)
+	rateLimiter := interactioncache.NewRedisRateLimiter(rdb)
+	muter := interactioncache.NewRedisMuter(rdb)
+
+	// --- AI room-moderator context (Phase 4) ---
+	// LLM gateway falls back to an offline mock when no API key is configured.
+	realLLM := cfg.AI.APIKey != ""
+	aiLLM := aillm.NewFromConfig(cfg.AI.APIKey, cfg.AI.BaseURL, cfg.AI.Model, cfg.AI.MockOnEmptyKey)
+	aiEmbedder := aillm.NewEmbedderFromConfig(cfg.AI.APIKey, cfg.AI.EmbeddingBaseURL, cfg.AI.EmbeddingModel)
+	aiKB := airag.NewService(aiEmbedder)
+	if err := airag.SeedDefaultKnowledge(context.Background(), aiKB); err != nil {
+		logger.L().Warn("seed default knowledge failed", zap.Error(err))
+	}
+	aiReg := aiagent.NewMapRegistry()
+	aiDeps := aiagent.Dependencies{
+		Status:    &roomStatusAdapter{rooms: roomSvc, hub: hub, micSvc: micSvc, pkSvc: pkSvc},
+		Leader:    &leaderboardAdapter{rank: rankStore},
+		Muted:     &roomModeratorAdapter{muter: muter},
+		Broadcast: aiBroadcasterAdapter{inner: broadcaster},
+		KB:        aiKB,
+	}
+	aiagent.RegisterBuiltinTools(aiReg, aiDeps)
+	aiLoop := aiagent.NewLoop(aiLLM, aiReg, aiagent.Config{MaxRounds: cfg.AI.AgentMaxRounds})
+	aiSvc := aiapplication.NewService(aiLLM, aiKB, aiLoop, cfg.AI.ModerationKeywords, realLLM)
+	aiHandler := aitransport.NewHandler(aiSvc, modeOf(realLLM), modelOr(cfg.AI.Model))
+
+	// --- interaction context ---
+	// The AI service is the moderator: it runs an LLM audit (with a keyword
+	// fast-path) and replaces the old keyword-only moderator transparently.
+	giftRepo := interactionpersist.NewGormGiftRepository(db)
+	orderRepo := interactionpersist.NewGormGiftOrderRepository(db)
+	danmakuRepo := interactionpersist.NewGormDanmakuRepository(db)
+	roomStatsRepo := interactionpersist.NewGormRoomStatsRepository(db)
+
+	enqueuer := interactionmsg.NewAsynqTaskEnqueuer(asynqClient)
+
+	interSvc := interactionapp.NewInterService(
+		giftRepo, orderRepo, danmakuRepo,
+		aiSvc, rateLimiter, muter, rankStore, likeCounter,
+		broadcaster, enqueuer,
+		interactionapp.InterServiceConfig{
+			DanmakuRateLimit:  cfg.Interaction.DanmakuRateLimit,
+			DanmakuRateWindow: cfg.Interaction.DanmakuRateWindow,
+		},
+	)
+	interHandler := interactiontransport.NewInteractionHandler(interSvc)
+	ingestConsumer := interactionapp.NewIngestConsumer(interSvc)
+
 	// --- asynq worker + scheduler ---
 	asynqServer := asynqworker.NewServer(cfg.Asynq.RedisAddr)
 	workerDeps := asynqworker.Deps{
@@ -155,10 +187,10 @@ func New(cfg *config.Config) (*Application, error) {
 	mux := asynq.NewServeMux()
 	workerDeps.Register(mux)
 	miclinkworker.Register(mux, miclinkworker.Deps{
-		PKs:        pkRepo,
+		PKs:         pkRepo,
 		Broadcaster: micBroadcaster,
-		Locker:     micLocker,
-		RDB:        rdb,
+		Locker:      micLocker,
+		RDB:         rdb,
 	})
 
 	scheduler := asynqworker.NewScheduler(cfg.Asynq.RedisAddr)
@@ -167,23 +199,24 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 
 	return &Application{
-		Config:           cfg,
-		DB:               db,
-		Redis:            rdb,
-		Hub:              hub,
-		Producer:         producer,
-		Consumer:         consumer,
-		Asynq:            asynqClient,
-		RoomHandler:      roomHandler,
-		WSHandler:        wsHandler,
-		InterHandler:     interHandler,
-		MicHandler:       micHandler,
-		ingestConsumer:   ingestConsumer,
-		miclinkConsumer:  miclinkConsumer,
-		miclinkIngest:    miclinkIngest,
-		asynqMux:         mux,
-		asynqServer:      asynqServer,
-		scheduler:        scheduler,
+		Config:          cfg,
+		DB:              db,
+		Redis:           rdb,
+		Hub:             hub,
+		Producer:        producer,
+		Consumer:        consumer,
+		Asynq:           asynqClient,
+		RoomHandler:     roomHandler,
+		WSHandler:       wsHandler,
+		InterHandler:    interHandler,
+		MicHandler:      micHandler,
+		AIHandler:       aiHandler,
+		ingestConsumer:  ingestConsumer,
+		miclinkConsumer: miclinkConsumer,
+		miclinkIngest:   miclinkIngest,
+		asynqMux:        mux,
+		asynqServer:     asynqServer,
+		scheduler:       scheduler,
 	}, nil
 }
 
@@ -255,6 +288,7 @@ func (a *Application) Run(ctx context.Context) error {
 	a.WSHandler.Register(router)
 	a.InterHandler.Register(router)
 	a.MicHandler.Register(router)
+	a.AIHandler.Register(router)
 
 	httpServer := &http.Server{
 		Addr:    a.Config.HTTP.Addr,
@@ -289,6 +323,22 @@ func (a *Application) Shutdown(ctx context.Context) error {
 		_ = sqlDB.Close()
 	}
 	return a.Redis.Close()
+}
+
+// modeOf returns the AI mode label for the health endpoint.
+func modeOf(realLLM bool) string {
+	if realLLM {
+		return "llm"
+	}
+	return "mock"
+}
+
+// modelOr returns the configured model or a mock label.
+func modelOr(model string) string {
+	if model == "" {
+		return "mock"
+	}
+	return model
 }
 
 func newDB(dsn string) (*gorm.DB, error) {

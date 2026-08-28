@@ -69,6 +69,53 @@ worker (Redis-backed), so a slow MySQL never blocks a WebSocket pump:
   - PK state transitions are guarded by a Redis distributed lock so concurrent
     triggers (from both rooms or a retry) cannot settle twice.
 
+## AI Room Moderator (ai context)
+
+Phase 4 turns the moderator into an LLM-powered agent. The context is layered
+like the others (`domain` ports, `infrastructure` adapters, `application` use
+cases, `transport` HTTP/SSE) and depends on no other context directly — it talks
+to room/miclink/interaction through ports implemented in the `app` wiring.
+
+### Responsibilities
+
+- **Danmaku audit (replaces keyword moderation)**: `ai.Service` implements the
+  `interaction.Moderator` port, so the interaction context swaps it in with no
+  code change. A cheap keyword blocklist runs first (fast reject, no LLM call);
+  when a real provider is configured a semantic LLM audit classifies each
+  message. Without a key the pipeline degrades to the keyword fast-path, so the
+  demo runs fully offline.
+- **SSE smart reply**: `GET /rooms/:id/ai/chat` streams a conversational turn
+  with the room moderator over Server-Sent Events (text deltas, tool calls,
+  tool results, done).
+- **Contextual auto-reply**: `POST /rooms/:id/ai/auto-reply` returns a short,
+  RAG-grounded reply to a danmaku (used to auto-respond to the audience).
+- **RAG knowledge base**: room rules / FAQ are embedded and stored in an
+  in-process cosine index (`rag.Service`); the agent retrieves the top-K chunks
+  to ground its answers. A mock embedder keeps it working without an embedding
+  API.
+- **Agent tool-calling**: a ReAct loop (`agent.Loop`) calls the model, executes
+  requested tools, feeds results back, and repeats until the model answers
+  without tools. Built-in tools:
+  - `get_room_status` — online count, mic-link, PK score (via `RoomStatusProvider`).
+  - `get_leaderboard` — gift rankings (via `LeaderboardProvider`).
+  - `get_room_rules` — RAG retrieval from the knowledge base.
+  - `mute_user` — bans a viewer for a duration (via `RoomModerator` → interaction `Muter`).
+  - `send_announcement` — publishes an AI announcement to the room (via `Broadcaster`).
+
+### Provider abstraction
+
+- `domain.Gateway` is the LLM port. `llm.Gateway` is an OpenAI-compatible client
+  with native tool calling + SSE tool-call parsing + retry/backoff;
+  `llm.MockGateway` is a deterministic offline stand-in that speaks the same
+  ReAct protocol (JSON tool calls) so the whole pipeline runs without an API key.
+- `domain.Embedder` / `domain.KnowledgeBase` mirror the same real-vs-mock split.
+
+### Mute enforcement
+
+Muting is owned by the interaction context (`Muter` port + `RedisMuter`). The
+agent's `mute_user` tool reaches it through the ai `RoomModerator` port, and
+`InterService.ProcessDanmaku` rejects muted users before moderation/broadcast.
+
 ## Data Storage
 
 - **MySQL**: durable business data.
