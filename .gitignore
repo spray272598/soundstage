@@ -1,0 +1,45 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+/target/
+
+# Test
+*.test
+*.out
+coverage.html
+coverage.out
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/logs/
+
+# Env
+.env
+.env.local
+
+# Local config overrides (keep templates in repo)
+configs/config.local.yaml
+configs/config.prod.yaml
+
+# Temporary
+tmp/
+temp/

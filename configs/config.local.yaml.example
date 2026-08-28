@@ -1,0 +1,5 @@
+# Copy to config.local.yaml and override values for your local machine.
+# config.local.yaml is gitignored.
+
+# ai:
+#   api_key: "sk-..."
