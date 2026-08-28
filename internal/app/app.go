@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	conninfra "github.com/spray272598/soundstage/internal/connection/infrastructure"
+	connapp "github.com/spray272598/soundstage/internal/connection/application"
+	conntransport "github.com/spray272598/soundstage/internal/connection/transport"
 	"github.com/spray272598/soundstage/internal/infrastructure/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/config"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
@@ -28,6 +31,7 @@ type Application struct {
 	Redis       *redis.Client
 	Producer    pkgkafka.Producer
 	RoomHandler *transport.RoomHandler
+	WSHandler   *conntransport.WSHandler
 }
 
 // New builds and wires the application.
@@ -49,6 +53,11 @@ func New(cfg *config.Config) (*Application, error) {
 	roomRepo := persistence.NewGormRoomRepository(db)
 	roomSvc := application.NewRoomService(roomRepo)
 	roomHandler := transport.NewRoomHandler(roomSvc)
+
+	hub := conninfra.NewHub()
+	connSvc := connapp.NewConnectionService(hub)
+	wsHandler := conntransport.NewWSHandler(connSvc)
+
 	producer := kafka.NewProducer(cfg.Kafka.Brokers)
 
 	return &Application{
@@ -57,6 +66,7 @@ func New(cfg *config.Config) (*Application, error) {
 		Redis:       rdb,
 		Producer:    producer,
 		RoomHandler: roomHandler,
+		WSHandler:   wsHandler,
 	}, nil
 }
 
@@ -86,6 +96,7 @@ func (a *Application) Run(ctx context.Context) error {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	a.RoomHandler.Register(router)
+	a.WSHandler.Register(router)
 
 	httpServer := &http.Server{
 		Addr:    a.Config.HTTP.Addr,

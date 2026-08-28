@@ -1,0 +1,87 @@
+package infrastructure
+
+import (
+	"sync"
+
+	"github.com/spray272598/soundstage/internal/connection/domain"
+)
+
+// Hub is an in-memory implementation of domain.Hub.
+type Hub struct {
+	rooms map[string]*roomBucket
+	mu    sync.RWMutex
+}
+
+type roomBucket struct {
+	sessions map[string]*domain.Session
+	mu       sync.RWMutex
+}
+
+// NewHub creates a new Hub.
+func NewHub() *Hub {
+	return &Hub{rooms: make(map[string]*roomBucket)}
+}
+
+// Register adds a session to its room.
+func (h *Hub) Register(s *domain.Session) {
+	h.bucket(s.RoomID).add(s)
+}
+
+// Unregister removes a session from its room.
+func (h *Hub) Unregister(s *domain.Session) {
+	h.bucket(s.RoomID).remove(s.ID)
+}
+
+// Broadcast sends a message to all sessions in a room.
+func (h *Hub) Broadcast(roomID string, msg []byte) {
+	h.bucket(roomID).broadcast(msg)
+}
+
+// RoomUserCount returns the number of connected sessions in a room.
+func (h *Hub) RoomUserCount(roomID string) int {
+	return h.bucket(roomID).count()
+}
+
+func (h *Hub) bucket(roomID string) *roomBucket {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	b, ok := h.rooms[roomID]
+	if !ok {
+		b = &roomBucket{sessions: make(map[string]*domain.Session)}
+		h.rooms[roomID] = b
+	}
+	return b
+}
+
+func (b *roomBucket) add(s *domain.Session) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.sessions[s.ID] = s
+}
+
+func (b *roomBucket) remove(id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.sessions, id)
+}
+
+func (b *roomBucket) broadcast(msg []byte) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, s := range b.sessions {
+		select {
+		case s.Send <- msg:
+		default:
+			// Drop message if send buffer is full to avoid blocking.
+		}
+	}
+}
+
+func (b *roomBucket) count() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.sessions)
+}
+
+// Compile-time check.
+var _ domain.Hub = (*Hub)(nil)
