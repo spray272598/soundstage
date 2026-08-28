@@ -6,7 +6,9 @@ app:
 http:
   addr: ":8080"
   read_timeout: 10s
-  write_timeout: 10s
+  # Generous write timeout: SSE agent runs can legitimately stream for up to
+  # ai.agent_timeout (60s); this headroom prevents mid-stream connection cuts.
+  write_timeout: 120s
 
 websocket:
   addr: ":8081"

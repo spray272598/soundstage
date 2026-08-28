@@ -1,0 +1,125 @@
+{
+  "title": "SoundStage Overview",
+  "uid": "soundstage-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "AI 弹幕审核 (moderation by decision/path)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(soundstage_ai_moderation_total[1m])) by (decision, path)", "legendFormat": "{{decision}}/{{path}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "AI 智能体运行 (agent runs by outcome)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(soundstage_ai_agent_runs_total[1m])) by (outcome)", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "AI 工具调用 (tool calls by tool/result)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(soundstage_ai_tool_calls_total[1m])) by (tool, result)", "legendFormat": "{{tool}}/{{result}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "RAG 检索 (queries by result)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(soundstage_ai_rag_queries_total[1m])) by (result)", "legendFormat": "{{result}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "SSE 连接数 (active AI chat streams)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 16 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "expr": "soundstage_ai_sse_connections" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "LLM 延迟 p95 (seconds)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 16 },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(soundstage_ai_llm_latency_seconds_bucket[5m])) by (le, kind))", "legendFormat": "{{kind}} p95" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "弹幕处理 (danmaku by result)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(soundstage_interaction_danmaku_total[1m])) by (result)", "legendFormat": "{{result}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "WebSocket 连接数",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 24 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "expr": "sum(soundstage_websocket_connections)" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "WebSocket 消息 (by type/direction)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 24 },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(soundstage_websocket_messages_total[1m])) by (type, direction)", "legendFormat": "{{type}}/{{direction}}" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "PK / 礼物 / 连麦 计数",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum(rate(soundstage_pk_sessions_total[1m])) by (status)", "legendFormat": "pk/{{status}}" },
+        { "expr": "sum(rate(soundstage_gift_order_status_total[1m])) by (status)", "legendFormat": "gift/{{status}}" },
+        { "expr": "sum(rate(soundstage_miclink_requests_total[1m])) by (result)", "legendFormat": "miclink/{{result}}" }
+      ]
+    }
+  ]
+}

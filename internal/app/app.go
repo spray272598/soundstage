@@ -148,7 +148,7 @@ func New(cfg *config.Config) (*Application, error) {
 		KB:        aiKB,
 	}
 	aiagent.RegisterBuiltinTools(aiReg, aiDeps)
-	aiLoop := aiagent.NewLoop(aiLLM, aiReg, aiagent.Config{MaxRounds: cfg.AI.AgentMaxRounds})
+	aiLoop := aiagent.NewLoop(aiLLM, aiReg, aiagent.Config{MaxRounds: cfg.AI.AgentMaxRounds, Timeout: cfg.AI.AgentTimeout})
 	aiSvc := aiapplication.NewService(aiLLM, aiKB, aiLoop, cfg.AI.ModerationKeywords, realLLM)
 	aiHandler := aitransport.NewHandler(aiSvc, modeOf(realLLM), modelOr(cfg.AI.Model))
 
@@ -293,6 +293,12 @@ func (a *Application) Run(ctx context.Context) error {
 	httpServer := &http.Server{
 		Addr:    a.Config.HTTP.Addr,
 		Handler: router,
+		// ReadTimeout guards against slowloris on request headers; WriteTimeout
+		// is deliberately generous (>= ai.agent_timeout) so legitimate SSE
+		// streams that span a multi-round agent run are not cut off mid-stream.
+		ReadTimeout:  mustDuration(a.Config.HTTP.ReadTimeout, 10*time.Second),
+		WriteTimeout: mustDuration(a.Config.HTTP.WriteTimeout, 30*time.Second),
+		IdleTimeout:  mustDuration(a.Config.HTTP.WriteTimeout, 120*time.Second),
 	}
 
 	go func() {
@@ -339,6 +345,18 @@ func modelOr(model string) string {
 		return "mock"
 	}
 	return model
+}
+
+// mustDuration parses a duration string, falling back to def on empty/invalid
+// input so a malformed config can never crash startup.
+func mustDuration(s string, def time.Duration) time.Duration {
+	if s == "" {
+		return def
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	return def
 }
 
 func newDB(dsn string) (*gorm.DB, error) {

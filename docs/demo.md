@@ -312,3 +312,47 @@ curl -X POST http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/danmaku \
 - `soundstage_ai_sse_connections` (gauge)
 - `soundstage_ai_llm_latency_seconds{kind="agent"}` (histogram)
 
+## Step 9: Observability & load test (Phase 5)
+
+### 9.1 Metrics server
+
+Metrics live on a dedicated server (default `:9091/metrics`), separate from the
+API (`:8080`):
+
+```bash
+curl -s http://127.0.0.1:9091/metrics | grep soundstage_ai
+```
+
+### 9.2 Grafana dashboard
+
+Bring up Prometheus + Grafana (the app must already be running on the host):
+
+```bash
+cd deploy/observability && docker compose up -d
+```
+
+Open http://localhost:3000 (admin/admin). The **SoundStage Overview** dashboard
+is auto-provisioned and shows AI moderation rate, agent runs, tool calls, RAG
+hits, live SSE connections, LLM p95 latency, danmaku throughput, WebSocket
+stats, and PK/gift/miclink counters. Alert rules (target down, moderation error
+rate, agent failures, SSE saturation) are in `prometheus/alert.rules.yml`.
+
+### 9.3 Load test the SSE chat + danmaku ingest
+
+Dependency-free Go generator (no k6 needed):
+
+```bash
+go run ./cmd/loadtest -base http://127.0.0.1:8080 -vus 50 -duration 30s -danmaku-rate 200
+```
+
+Or with k6:
+
+```bash
+k6 run -e BASE=http://127.0.0.1:8080 deploy/loadtest/k6.js
+```
+
+Both report SSE latency (avg/p50/p95/p99), error rates, and throughput. With the
+mock LLM, SSE turns finish in a few ms; with a real LLM the p95 tracks provider
+latency. Full reference: [`docs/observability.md`](observability.md).
+
+

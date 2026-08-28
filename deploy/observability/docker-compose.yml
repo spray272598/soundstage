@@ -1,0 +1,40 @@
+version: "3.8"
+
+# Observability stack for SoundStage.
+#
+# Run the Go app on the host (it needs MySQL/Redis/Kafka), then bring up
+# Prometheus + Grafana here. They scrape the app's /metrics endpoint on
+# :9091 via host.docker.internal. Open Grafana at http://localhost:3000
+# (admin/admin) and the SoundStage Overview dashboard is auto-provisioned.
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    # Let the container reach the host app on Windows/macOS; on Linux the
+    # host-gateway mapping below makes host.docker.internal resolvable.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus:/etc/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana:/etc/grafana/provisioning
+    depends_on:
+      - prometheus

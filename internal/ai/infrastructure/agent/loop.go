@@ -18,6 +18,10 @@ import (
 type Config struct {
 	// MaxRounds caps tool-calling iterations to avoid runaway runs.
 	MaxRounds int
+	// Timeout caps the wall-clock duration of a single agent run. When the
+	// run exceeds it the context is cancelled and the run is marked canceled,
+	// so a slow/hung LLM can never pin an SSE connection open forever.
+	Timeout time.Duration
 	// SystemPrompt overrides the default moderator persona when non-empty.
 	SystemPrompt string
 }
@@ -41,6 +45,15 @@ func NewLoop(llm aidomain.Gateway, reg aidomain.Registry, cfg Config) *Loop {
 // Run executes one user turn and returns the final answer, streaming events.
 func (l *Loop) Run(ctx context.Context, roomID, userID, message string, onEvent func(aidomain.AgentEvent)) (string, error) {
 	start := time.Now()
+	// Apply the run-level timeout (config.ai.agent_timeout) so a slow or hung
+	// LLM cannot keep an SSE connection open indefinitely. The client's own
+	// context cancellation still takes precedence via runCtx.
+	runCtx := ctx
+	if l.cfg.Timeout > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, l.cfg.Timeout)
+		defer cancel()
+	}
 	history := []aidomain.ChatMessage{{Role: "system", Content: l.systemPrompt(roomID, userID)}}
 	history = append(history, aidomain.ChatMessage{Role: "user", Content: message})
 
@@ -49,13 +62,13 @@ func (l *Loop) Run(ctx context.Context, roomID, userID, message string, onEvent 
 
 	for round := 0; round < l.cfg.MaxRounds; round++ {
 		select {
-		case <-ctx.Done():
+		case <-runCtx.Done():
 			metrics.AIAgentRunsTotal.WithLabelValues("canceled").Inc()
-			return final, ctx.Err()
+			return final, runCtx.Err()
 		default:
 		}
 
-		resp, err := l.llm.GenerateStream(ctx, &aidomain.ChatRequest{
+		resp, err := l.llm.GenerateStream(runCtx, &aidomain.ChatRequest{
 			Messages:    history,
 			Tools:       tools,
 			Temperature: 0.2,
@@ -96,7 +109,7 @@ func (l *Loop) Run(ctx context.Context, roomID, userID, message string, onEvent 
 			if onEvent != nil {
 				onEvent(aidomain.AgentEvent{Type: aidomain.EventToolCall, ToolName: call.Name, ToolArgs: call.Arguments})
 			}
-			result := l.execute(ctx, call)
+			result := l.execute(runCtx, call)
 			if onEvent != nil {
 				onEvent(aidomain.AgentEvent{Type: aidomain.EventToolResult, ToolName: call.Name, ToolResult: result})
 			}
@@ -111,7 +124,7 @@ func (l *Loop) Run(ctx context.Context, roomID, userID, message string, onEvent 
 
 	if final == "" {
 		// Ran out of rounds; ask the model to summarize without tools.
-		resp, err := l.llm.Generate(ctx, &aidomain.ChatRequest{
+		resp, err := l.llm.Generate(runCtx, &aidomain.ChatRequest{
 			Messages:    append(history, aidomain.ChatMessage{Role: "user", Content: "请基于已有信息直接给出最终回复，不要再调用工具。"}),
 			Temperature: 0.2,
 			ToolChoice:  "none",

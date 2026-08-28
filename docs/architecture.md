@@ -133,11 +133,30 @@ agent's `mute_user` tool reaches it through the ai `RoomModerator` port, and
 
 ## Observability
 
-- Prometheus metrics exposed on `/metrics`.
-- Grafana dashboards for connections, broadcast throughput, task latency.
-- OpenTelemetry traces across HTTP/WebSocket and Kafka handlers.
-- Structured JSON logs via zap.
-- pprof endpoints for profiling.
+- **Prometheus metrics** are exposed on a dedicated server (`config.metrics`,
+  default `:9091/metrics`) using a custom registry. Every bounded context
+  publishes counters/gauges/histograms — see [`docs/observability.md`](observability.md)
+  for the full metric list and the Grafana dashboard JSON.
+- **Grafana**: a provisioned `SoundStage Overview` dashboard ships under
+  `deploy/observability/grafana/dashboards/`. Bring up Prometheus + Grafana with
+  `deploy/observability/docker-compose.yml`.
+- **Alerts**: `deploy/observability/prometheus/alert.rules.yml` covers target-down,
+  moderation error rate, agent failure rate, and SSE connection saturation.
+- **Structured JSON logs** via zap (level/format in `config.log`).
+- **Load testing**: `cmd/loadtest` (dependency-free Go generator) and
+  `deploy/loadtest/k6.js` exercise the SSE chat + danmaku ingest paths; see
+  `deploy/loadtest/README.md`.
+
+### Tuning knobs (Phase 5)
+
+- `ai.agent_timeout` (default 60s) caps a single agent run; the ReAct loop wraps
+  each run in a context timeout so a slow/hung LLM cannot pin an SSE connection
+  open forever.
+- `http.write_timeout` (default 120s) is deliberately generous so legitimate SSE
+  streams that span a multi-round agent run are not cut off mid-stream;
+  `http.read_timeout` guards slow header reads.
+- `ai.agent_max_rounds`, `ai.rag_top_k`, `interaction.danmaku_rate_limit`, and the
+  `Muter` TTL are the other primary dials.
 
 ## Dependency Inversion
 

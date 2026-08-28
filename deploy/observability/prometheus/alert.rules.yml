@@ -1,0 +1,45 @@
+groups:
+  - name: soundstage
+    rules:
+      # The app metrics endpoint is unreachable.
+      - alert: SoundStageTargetDown
+        expr: up{job="soundstage"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SoundStage metrics target is down"
+          description: "Prometheus cannot scrape soundstage:9091 for 2 minutes."
+
+      # Moderation is erroring out (provider outage / bad responses) at scale.
+      - alert: SoundStageAIModerationErrorsHigh
+        expr: |
+          sum(rate(soundstage_ai_moderation_total{decision="error"}[5m]))
+            /
+          sum(rate(soundstage_ai_moderation_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI danmaku moderation error rate > 20%"
+          description: "More than 20% of moderation calls are failing over 5m."
+
+      # Agent (ReAct) runs are failing instead of completing.
+      - alert: SoundStageAgentFailuresHigh
+        expr: sum(increase(soundstage_ai_agent_runs_total{outcome="error"}[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI agent failure count is high"
+          description: "Over 10 agent runs failed in the last 5 minutes."
+
+      # Too many open SSE streams may indicate connections that never close.
+      - alert: SoundStageSSEConnectionsSaturated
+        expr: soundstage_ai_sse_connections > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many concurrent AI SSE connections"
+          description: "soundstage_ai_sse_connections has been above 500 for 10m."
