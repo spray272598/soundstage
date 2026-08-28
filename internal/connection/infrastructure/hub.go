@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/spray272598/soundstage/internal/connection/domain"
+	"github.com/spray272598/soundstage/internal/pkg/metrics"
 )
 
 // Hub is an in-memory implementation of domain.Hub.
@@ -25,11 +26,13 @@ func NewHub() *Hub {
 // Register adds a session to its room.
 func (h *Hub) Register(s *domain.Session) {
 	h.bucket(s.RoomID).add(s)
+	metrics.WSConnections.WithLabelValues(s.RoomID).Inc()
 }
 
 // Unregister removes a session from its room.
 func (h *Hub) Unregister(s *domain.Session) {
 	h.bucket(s.RoomID).remove(s.ID)
+	metrics.WSConnections.WithLabelValues(s.RoomID).Dec()
 }
 
 // Broadcast sends a message to all sessions in a room.

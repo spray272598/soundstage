@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	conninfra "github.com/spray272598/soundstage/internal/connection/infrastructure"
 	connapp "github.com/spray272598/soundstage/internal/connection/application"
+	connDomain "github.com/spray272598/soundstage/internal/connection/domain"
+	conninfra "github.com/spray272598/soundstage/internal/connection/infrastructure"
 	conntransport "github.com/spray272598/soundstage/internal/connection/transport"
 	"github.com/spray272598/soundstage/internal/infrastructure/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/config"
@@ -29,7 +30,9 @@ type Application struct {
 	Config      *config.Config
 	DB          *gorm.DB
 	Redis       *redis.Client
+	Hub         connDomain.Hub
 	Producer    pkgkafka.Producer
+	Consumer    pkgkafka.Consumer
 	RoomHandler *transport.RoomHandler
 	WSHandler   *conntransport.WSHandler
 }
@@ -55,16 +58,19 @@ func New(cfg *config.Config) (*Application, error) {
 	roomHandler := transport.NewRoomHandler(roomSvc)
 
 	hub := conninfra.NewHub()
-	connSvc := connapp.NewConnectionService(hub)
-	wsHandler := conntransport.NewWSHandler(connSvc)
-
 	producer := kafka.NewProducer(cfg.Kafka.Brokers)
+	broadcastTopic := cfg.Kafka.TopicPrefix + "broadcast"
+	connSvc := connapp.NewConnectionService(hub, producer, broadcastTopic)
+	wsHandler := conntransport.NewWSHandler(connSvc)
+	consumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-gateway")
 
 	return &Application{
 		Config:      cfg,
 		DB:          db,
 		Redis:       rdb,
+		Hub:         hub,
 		Producer:    producer,
+		Consumer:    consumer,
 		RoomHandler: roomHandler,
 		WSHandler:   wsHandler,
 	}, nil
@@ -80,6 +86,15 @@ func (a *Application) Run(ctx context.Context) error {
 	if err := a.DB.AutoMigrate(&persistence.RoomModel{}); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
+
+	// Start Kafka consumer for cross-node broadcast.
+	broadcastTopic := a.Config.Kafka.TopicPrefix + "broadcast"
+	broadcastHandler := conninfra.NewBroadcastHandler(a.Hub)
+	go func() {
+		if err := a.Consumer.Subscribe(ctx, []string{broadcastTopic}, broadcastHandler); err != nil {
+			logger.L().Error("kafka consumer error", zap.Error(err))
+		}
+	}()
 
 	// Metrics server.
 	go func() {
@@ -120,6 +135,7 @@ func (a *Application) Run(ctx context.Context) error {
 // Shutdown releases resources gracefully.
 func (a *Application) Shutdown(ctx context.Context) error {
 	logger.L().Info("soundstage shutting down")
+	_ = a.Consumer.Close()
 	_ = a.Producer.Close()
 	sqlDB, err := a.DB.DB()
 	if err == nil {

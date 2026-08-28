@@ -1,23 +1,32 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/spray272598/soundstage/internal/connection/domain"
+	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
+	"github.com/spray272598/soundstage/internal/pkg/metrics"
 	"go.uber.org/zap"
 )
 
 // ConnectionService manages the lifecycle of a WebSocket connection.
 type ConnectionService struct {
-	hub domain.Hub
+	hub         domain.Hub
+	producer    pkgkafka.Producer
+	broadcastTopic string
 }
 
 // NewConnectionService creates a new ConnectionService.
-func NewConnectionService(hub domain.Hub) *ConnectionService {
-	return &ConnectionService{hub: hub}
+func NewConnectionService(hub domain.Hub, producer pkgkafka.Producer, broadcastTopic string) *ConnectionService {
+	return &ConnectionService{
+		hub:            hub,
+		producer:       producer,
+		broadcastTopic: broadcastTopic,
+	}
 }
 
 // Handle runs the read and write pumps for a session.
@@ -62,16 +71,13 @@ func (s *ConnectionService) readPump(session *domain.Session) {
 			continue
 		}
 
+		metrics.WSMessagesTotal.WithLabelValues(msg.Type, "in").Inc()
+
 		switch msg.Type {
 		case "heartbeat":
 			// Pong handler already refreshed the deadline.
 		case "chat":
-			// TODO: validate and broadcast via kafka/hub in Phase 1.4 / Phase 2.
-			broadcast, _ := json.Marshal(domain.Message{
-				Type:    "chat",
-				Payload: msg.Payload,
-			})
-			s.hub.Broadcast(session.RoomID, broadcast)
+			s.broadcast(session.RoomID, msg.Type, msg.Payload)
 		}
 	}
 }
@@ -94,6 +100,7 @@ func (s *ConnectionService) writePump(session *domain.Session) {
 			if err := session.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
+			metrics.WSMessagesTotal.WithLabelValues("broadcast", "out").Inc()
 
 		case <-ticker.C:
 			session.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
@@ -101,5 +108,21 @@ func (s *ConnectionService) writePump(session *domain.Session) {
 				return
 			}
 		}
+	}
+}
+
+func (s *ConnectionService) broadcast(roomID string, msgType string, payload []byte) {
+	evt := domain.BroadcastEvent{
+		RoomID:  roomID,
+		Type:    msgType,
+		Payload: payload,
+	}
+	data, err := json.Marshal(evt)
+	if err != nil {
+		logger.L().Error("failed to marshal broadcast event", zap.Error(err))
+		return
+	}
+	if err := s.producer.Publish(context.Background(), s.broadcastTopic, roomID, data); err != nil {
+		logger.L().Error("failed to publish broadcast event", zap.Error(err))
 	}
 }

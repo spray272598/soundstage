@@ -30,6 +30,9 @@ make docker-up
 make run
 ```
 
+See [docs/demo.md](docs/demo.md) for a step-by-step Phase 1 walkthrough
+(room lifecycle + WebSocket + Kafka broadcast + metrics).
+
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md).
