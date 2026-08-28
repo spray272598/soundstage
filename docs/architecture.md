@@ -27,17 +27,25 @@ This keeps core business logic independent of frameworks and external services.
 ### Real-time broadcast
 
 Real-time events flow through two Kafka topics, keeping the gateway decoupled
-from the interaction context:
+from the business contexts. Each context runs in its **own consumer group**, so
+every context reads the same events independently:
 
 1. Client connects to the `connection` WebSocket gateway.
-2. Gateway publishes raw inbound messages (`chat`/`gift`/`like`) to `soundstage.ingest`.
-3. The interaction context consumes `soundstage.ingest`, runs the synchronous
-   path (rate limit + moderation) and broadcasts the result to `soundstage.broadcast`.
+2. Gateway publishes raw inbound messages to `soundstage.ingest`:
+   - `chat`/`gift`/`like` → interaction context.
+   - `signal` → miclink context (WebRTC co-host signaling).
+   - `gift` → miclink context too, where it feeds a room's PK score when that
+     room is in an active battle (event reuse across contexts).
+3. Each business context consumes `soundstage.ingest` in its own group, runs the
+   synchronous path (rate limit + moderation for interaction; state machine +
+   scoring for miclink) and broadcasts results to `soundstage.broadcast`.
 4. All gateway nodes consume `soundstage.broadcast` and fan out to local
-   WebSocket sessions via per-room in-memory buckets.
+   WebSocket sessions via per-room in-memory buckets. A `To` recipient on the
+   envelope restricts delivery to a single user (used for point-to-point
+   signaling).
 
-The REST endpoints call the same `InterService` directly, so behavior is
-identical regardless of entry point.
+The REST endpoints call the same services directly, so behavior is identical
+regardless of entry point.
 
 ### Asynchronous tasks
 
@@ -48,6 +56,19 @@ worker (Redis-backed), so a slow MySQL never blocks a WebSocket pump:
 - `interaction:settle_gift` — mark a gift order settled and update leaderboards (idempotent).
 - `interaction:flush_likes` — periodic (every 30s) snapshot of per-room like tallies to MySQL.
 
+### Mic-link and PK (miclink context)
+
+- **Co-host (连麦)**: an intra-room `MicLink` aggregate (requesting → connected →
+  closed). WebRTC offer/answer/ice are relayed point-to-point between host and
+  guest via the broadcast envelope's `To` recipient.
+- **Cross-room PK (对战)**: a `PKSession` aggregate with a state machine
+  (`pending` → `matched` → `ongoing` → `finished`). Each room's gifts during the
+  battle feed that room's score. A countdown timer arms two asynq delayed tasks:
+  - `miclink:pk_countdown` — warns clients shortly before the deadline.
+  - `miclink:pk_settle` — finalizes the battle and decides the winner.
+  - PK state transitions are guarded by a Redis distributed lock so concurrent
+    triggers (from both rooms or a retry) cannot settle twice.
+
 ## Data Storage
 
 - **MySQL**: durable business data.
@@ -57,6 +78,9 @@ worker (Redis-backed), so a slow MySQL never blocks a WebSocket pump:
     an `idempotency_key` unique index and reconciliation-friendly shape.
   - `danmaku_YYYYMMDD` — day-sharded danmaku tables, created lazily on first write.
   - `room_stats` — periodic snapshot of like/gift counters.
+  - `mic_links` — co-host sessions (host, guest, status, timestamps).
+  - `pk_sessions` — cross-room PK battles (both rooms, status, scores, deadline,
+    winner).
 - **Redis**: online state, like counters, gift leaderboards (sorted sets per
   room and period), rate-limit windows, distributed locks, asynq queues.
 

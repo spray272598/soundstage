@@ -41,6 +41,11 @@ interaction:
     - "fuck"
   gift_idempotency_ttl: 24h
 
+miclink:
+  pk_duration: 5m
+  pk_countdown_notice: 10s
+  lock_ttl: 30s
+
 metrics:
   addr: ":9091"
   path: "/metrics"

@@ -40,6 +40,11 @@ func (h *Hub) Broadcast(roomID string, msg []byte) {
 	h.bucket(roomID).broadcast(msg)
 }
 
+// SendToUser delivers a message to every session of a specific user in a room.
+func (h *Hub) SendToUser(roomID string, userID string, msg []byte) {
+	h.bucket(roomID).sendToUser(userID, msg)
+}
+
 // RoomUserCount returns the number of connected sessions in a room.
 func (h *Hub) RoomUserCount(roomID string) int {
 	return h.bucket(roomID).count()
@@ -72,6 +77,22 @@ func (b *roomBucket) broadcast(msg []byte) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for _, s := range b.sessions {
+		select {
+		case s.Send <- msg:
+		default:
+			// Drop message if send buffer is full to avoid blocking.
+		}
+	}
+}
+
+// sendToUser delivers msg to every session whose UserID matches in this room.
+func (b *roomBucket) sendToUser(userID string, msg []byte) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, s := range b.sessions {
+		if s.UserID != userID {
+			continue
+		}
 		select {
 		case s.Send <- msg:
 		default:

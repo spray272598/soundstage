@@ -16,7 +16,8 @@ type Config struct {
 	Kafka      KafkaConfig      `mapstructure:"kafka"`
 	Asynq      AsynqConfig      `mapstructure:"asynq"`
 	Interaction InteractionConfig `mapstructure:"interaction"`
-	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	MicLink     MicLinkConfig     `mapstructure:"miclink"`
+	Metrics     MetricsConfig    `mapstructure:"metrics"`
 	Log        LogConfig        `mapstructure:"log"`
 	AI         AIConfig         `mapstructure:"ai"`
 }
@@ -78,6 +79,16 @@ type InteractionConfig struct {
 	ModerationKeywords []string `mapstructure:"moderation_keywords"`
 	// GiftIdempotencyTTL is how long a gift idempotency key is remembered.
 	GiftIdempotencyTTL time.Duration `mapstructure:"gift_idempotency_ttl"`
+}
+
+// MicLinkConfig holds the mic-link / PK tunables.
+type MicLinkConfig struct {
+	// PKDuration is the default length of a cross-room PK battle.
+	PKDuration time.Duration `mapstructure:"pk_duration"`
+	// PKCountdownNotice fires this long before the deadline to warn clients.
+	PKCountdownNotice time.Duration `mapstructure:"pk_countdown_notice"`
+	// LockTTL is the TTL of the distributed lock guarding PK transitions.
+	LockTTL time.Duration `mapstructure:"lock_ttl"`
 }
 
 // MetricsConfig holds the metrics server configuration.

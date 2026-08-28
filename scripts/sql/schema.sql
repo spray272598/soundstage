@@ -57,3 +57,37 @@ INSERT IGNORE INTO gifts (id, name, price, icon, status) VALUES
     ('g_rocket', 'Rocket',   9999, '🚀', 'active'),
     ('g_crown',  'Crown',    29999, '👑', 'active'),
     ('g_archive','Archived',  1,    '📦', 'inactive');
+
+-- Co-host (mic-link) sessions: intra-room host + guest signaling/state.
+CREATE TABLE IF NOT EXISTS mic_links (
+    id VARCHAR(32) PRIMARY KEY,
+    room_id VARCHAR(32) NOT NULL,
+    host_id VARCHAR(32) NOT NULL,
+    guest_id VARCHAR(32) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    closed_at DATETIME NULL,
+    INDEX idx_miclink_room (room_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cross-room PK battles: state machine + scoring for two rooms.
+CREATE TABLE IF NOT EXISTS pk_sessions (
+    id VARCHAR(32) PRIMARY KEY,
+    room_a_id VARCHAR(32) NOT NULL,
+    room_b_id VARCHAR(32) NOT NULL,
+    anchor_a_id VARCHAR(32) NOT NULL,
+    anchor_b_id VARCHAR(32) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    score_a BIGINT NOT NULL DEFAULT 0,
+    score_b BIGINT NOT NULL DEFAULT 0,
+    started_at DATETIME NULL,
+    ends_at DATETIME NULL,
+    winner VARCHAR(8) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    finished_at DATETIME NULL,
+    INDEX idx_pk_room_a (room_a_id),
+    INDEX idx_pk_room_b (room_b_id),
+    INDEX idx_pk_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

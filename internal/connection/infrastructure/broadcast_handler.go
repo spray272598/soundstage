@@ -31,6 +31,10 @@ func (h *BroadcastHandler) Handle(ctx context.Context, topic string, key string,
 	if err != nil {
 		return err
 	}
-	h.hub.Broadcast(evt.RoomID, out)
+	if evt.To != "" {
+		h.hub.SendToUser(evt.RoomID, evt.To, out)
+	} else {
+		h.hub.Broadcast(evt.RoomID, out)
+	}
 	return nil
 }

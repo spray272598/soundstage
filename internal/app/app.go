@@ -20,6 +20,12 @@ import (
 	asynqworker "github.com/spray272598/soundstage/internal/interaction/infrastructure/asynqworker"
 	interactiontask "github.com/spray272598/soundstage/internal/interaction/task"
 	interactiontransport "github.com/spray272598/soundstage/internal/interaction/transport"
+	miclinkapp "github.com/spray272598/soundstage/internal/miclink/application"
+	miclinkcache "github.com/spray272598/soundstage/internal/miclink/infrastructure/cache"
+	miclinkpersist "github.com/spray272598/soundstage/internal/miclink/infrastructure/persistence"
+	miclinkmsg "github.com/spray272598/soundstage/internal/miclink/infrastructure/messaging"
+	miclinkworker "github.com/spray272598/soundstage/internal/miclink/infrastructure/asynqworker"
+	miclinktransport "github.com/spray272598/soundstage/internal/miclink/transport"
 	"github.com/spray272598/soundstage/internal/infrastructure/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/config"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
@@ -43,14 +49,17 @@ type Application struct {
 	Producer  pkgkafka.Producer
 	Consumer  pkgkafka.Consumer
 	Asynq     *asynq.Client
-	RoomHandler *roomtransport.RoomHandler
-	WSHandler   *conntransport.WSHandler
+	RoomHandler  *roomtransport.RoomHandler
+	WSHandler    *conntransport.WSHandler
 	InterHandler *interactiontransport.InteractionHandler
+	MicHandler   *miclinktransport.MiclinkHandler
 
-	ingestConsumer *interactionapp.IngestConsumer
-	asynqMux       *asynq.ServeMux
-	asynqServer    *asynq.Server
-	scheduler      *asynq.Scheduler
+	ingestConsumer    *interactionapp.IngestConsumer
+	miclinkConsumer   *kafka.Consumer
+	miclinkIngest     *miclinkapp.MiclinkIngestConsumer
+	asynqMux          *asynq.ServeMux
+	asynqServer       *asynq.Server
+	scheduler         *asynq.Scheduler
 }
 
 // New builds and wires the application.
@@ -110,6 +119,29 @@ func New(cfg *config.Config) (*Application, error) {
 	interHandler := interactiontransport.NewInteractionHandler(interSvc)
 	ingestConsumer := interactionapp.NewIngestConsumer(interSvc)
 
+	// --- miclink context (co-host + cross-room PK) ---
+	micRepo := miclinkpersist.NewGormMicLinkRepository(db)
+	pkRepo := miclinkpersist.NewGormPKSessionRepository(db)
+	micBroadcaster := miclinkmsg.NewKafkaBroadcaster(producer, broadcastTopic)
+	signalingRelay := miclinkmsg.NewKafkaSignalingRelay(producer, broadcastTopic)
+	micLocker := miclinkcache.NewRedisLocker(rdb, cfg.MicLink.LockTTL)
+	micEnqueuer := miclinkmsg.NewAsynqTaskEnqueuer(asynqClient)
+
+	micSvc := miclinkapp.NewMicLinkService(micRepo, signalingRelay, micBroadcaster)
+	pkSvc := miclinkapp.NewPKService(
+		pkRepo,
+		micBroadcaster,
+		micEnqueuer,
+		micLocker,
+		miclinkapp.PKServiceConfig{
+			Duration:        cfg.MicLink.PKDuration,
+			CountdownNotice: cfg.MicLink.PKCountdownNotice,
+		},
+	)
+	micHandler := miclinktransport.NewMiclinkHandler(micSvc, pkSvc)
+	miclinkIngest := miclinkapp.NewMiclinkIngestConsumer(micSvc, pkSvc)
+	miclinkConsumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-miclink")
+
 	// --- asynq worker + scheduler ---
 	asynqServer := asynqworker.NewServer(cfg.Asynq.RedisAddr)
 	workerDeps := asynqworker.Deps{
@@ -122,6 +154,12 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 	mux := asynq.NewServeMux()
 	workerDeps.Register(mux)
+	miclinkworker.Register(mux, miclinkworker.Deps{
+		PKs:        pkRepo,
+		Broadcaster: micBroadcaster,
+		Locker:     micLocker,
+		RDB:        rdb,
+	})
 
 	scheduler := asynqworker.NewScheduler(cfg.Asynq.RedisAddr)
 	if _, err := scheduler.Register("@every 30s", asynq.NewTask(interactiontask.TypeFlushLikes, nil)); err != nil {
@@ -129,20 +167,23 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 
 	return &Application{
-		Config:       cfg,
-		DB:           db,
-		Redis:        rdb,
-		Hub:          hub,
-		Producer:     producer,
-		Consumer:     consumer,
-		Asynq:        asynqClient,
-		RoomHandler:  roomHandler,
-		WSHandler:    wsHandler,
-		InterHandler: interHandler,
-		ingestConsumer: ingestConsumer,
-		asynqMux:       mux,
-		asynqServer:    asynqServer,
-		scheduler:      scheduler,
+		Config:           cfg,
+		DB:               db,
+		Redis:            rdb,
+		Hub:              hub,
+		Producer:         producer,
+		Consumer:         consumer,
+		Asynq:            asynqClient,
+		RoomHandler:      roomHandler,
+		WSHandler:        wsHandler,
+		InterHandler:     interHandler,
+		MicHandler:       micHandler,
+		ingestConsumer:   ingestConsumer,
+		miclinkConsumer:  miclinkConsumer,
+		miclinkIngest:    miclinkIngest,
+		asynqMux:         mux,
+		asynqServer:      asynqServer,
+		scheduler:        scheduler,
 	}, nil
 }
 
@@ -158,6 +199,8 @@ func (a *Application) Run(ctx context.Context) error {
 		&interactionpersist.GiftModel{},
 		&interactionpersist.GiftOrderModel{},
 		&interactionpersist.RoomStatsModel{},
+		&miclinkpersist.MicLinkModel{},
+		&miclinkpersist.PKSessionModel{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
@@ -174,6 +217,11 @@ func (a *Application) Run(ctx context.Context) error {
 	go func() {
 		if err := a.Consumer.Subscribe(ctx, []string{ingestTopic}, a.ingestConsumer); err != nil {
 			logger.L().Error("kafka ingest consumer error", zap.Error(err))
+		}
+	}()
+	go func() {
+		if err := a.miclinkConsumer.Subscribe(ctx, []string{ingestTopic}, a.miclinkIngest); err != nil {
+			logger.L().Error("kafka miclink ingest consumer error", zap.Error(err))
 		}
 	}()
 
@@ -206,6 +254,7 @@ func (a *Application) Run(ctx context.Context) error {
 	a.RoomHandler.Register(router)
 	a.WSHandler.Register(router)
 	a.InterHandler.Register(router)
+	a.MicHandler.Register(router)
 
 	httpServer := &http.Server{
 		Addr:    a.Config.HTTP.Addr,
@@ -233,6 +282,7 @@ func (a *Application) Shutdown(ctx context.Context) error {
 	a.asynqServer.Shutdown()
 	_ = a.Asynq.Close()
 	_ = a.Consumer.Close()
+	_ = a.miclinkConsumer.Close()
 	_ = a.Producer.Close()
 	sqlDB, err := a.DB.DB()
 	if err == nil {

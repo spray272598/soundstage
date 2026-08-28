@@ -16,9 +16,11 @@ type InboundEnvelope struct {
 
 // BroadcastEnvelope is published to the broadcast topic for client fan-out.
 // The connection gateway consumes it and pushes the payload to every session
-// in the target room.
+// in the target room. When To is set, delivery is restricted to that single
+// user id within the room - used for point-to-point WebRTC signaling.
 type BroadcastEnvelope struct {
 	RoomID  string          `json:"room_id"`
 	Type    string          `json:"type"`
+	To      string          `json:"to,omitempty"`
 	Payload json.RawMessage `json:"payload"`
 }

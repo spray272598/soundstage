@@ -82,6 +82,10 @@ func (s *ConnectionService) readPump(session *domain.Session) {
 			// event bus. This keeps the gateway decoupled and lets the same
 			// processing path serve both WebSocket and REST entry points.
 			s.publishIngest(session, msg.Type, msg.Payload)
+		case "signal":
+			// Hand WebRTC co-host (mic-link) signaling to the miclink context
+			// through the same event bus (a separate consumer group).
+			s.publishIngest(session, msg.Type, msg.Payload)
 		}
 	}
 }

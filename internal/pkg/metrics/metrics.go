@@ -68,6 +68,34 @@ var (
 		Name:      "asynq_task_enqueued_total",
 		Help:      "Background tasks enqueued by type",
 	}, []string{"type"})
+
+	// MicLinkRequestsTotal counts co-host (mic-link) requests by result.
+	MicLinkRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "miclink_requests_total",
+		Help:      "Co-host mic-link requests by result",
+	}, []string{"result"})
+
+	// PKSessionsTotal counts PK sessions by terminal status.
+	PKSessionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "pk_sessions_total",
+		Help:      "PK sessions by status",
+	}, []string{"status"})
+
+	// PKScoreTotal counts points added to a PK side.
+	PKScoreTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "pk_score_total",
+		Help:      "PK score points by side",
+	}, []string{"side"})
+
+	// SignalingRelayedTotal counts WebRTC signaling messages relayed.
+	SignalingRelayedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "signaling_relayed_total",
+		Help:      "WebRTC signaling messages relayed by the miclink context",
+	})
 )
 
 func init() {
@@ -79,5 +107,9 @@ func init() {
 		InteractionLikeTotal,
 		GiftOrderStatusTotal,
 		AsynqTaskEnqueuedTotal,
+		MicLinkRequestsTotal,
+		PKSessionsTotal,
+		PKScoreTotal,
+		SignalingRelayedTotal,
 	)
 }
