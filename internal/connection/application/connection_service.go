@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/spray272598/soundstage/internal/connection/domain"
 	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
+	"github.com/spray272598/soundstage/internal/pkg/event"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
 	"go.uber.org/zap"
@@ -17,15 +18,15 @@ import (
 type ConnectionService struct {
 	hub         domain.Hub
 	producer    pkgkafka.Producer
-	broadcastTopic string
+	ingestTopic string
 }
 
 // NewConnectionService creates a new ConnectionService.
-func NewConnectionService(hub domain.Hub, producer pkgkafka.Producer, broadcastTopic string) *ConnectionService {
+func NewConnectionService(hub domain.Hub, producer pkgkafka.Producer, ingestTopic string) *ConnectionService {
 	return &ConnectionService{
-		hub:            hub,
-		producer:       producer,
-		broadcastTopic: broadcastTopic,
+		hub:         hub,
+		producer:    producer,
+		ingestTopic: ingestTopic,
 	}
 }
 
@@ -75,9 +76,12 @@ func (s *ConnectionService) readPump(session *domain.Session) {
 
 		switch msg.Type {
 		case "heartbeat":
-			// Pong handler already refreshed the deadline.
-		case "chat":
-			s.broadcast(session.RoomID, msg.Type, msg.Payload)
+			// Pong handler already refreshed the read deadline.
+		case "chat", "gift", "like":
+			// Hand interactive messages to the interaction context through the
+			// event bus. This keeps the gateway decoupled and lets the same
+			// processing path serve both WebSocket and REST entry points.
+			s.publishIngest(session, msg.Type, msg.Payload)
 		}
 	}
 }
@@ -111,18 +115,24 @@ func (s *ConnectionService) writePump(session *domain.Session) {
 	}
 }
 
-func (s *ConnectionService) broadcast(roomID string, msgType string, payload []byte) {
-	evt := domain.BroadcastEvent{
-		RoomID:  roomID,
+// publishIngest forwards an inbound client message to the ingest topic.
+func (s *ConnectionService) publishIngest(session *domain.Session, msgType string, payload []byte) {
+	env := event.InboundEnvelope{
 		Type:    msgType,
+		RoomID:  session.RoomID,
+		UserID:  session.UserID,
 		Payload: payload,
 	}
-	data, err := json.Marshal(evt)
+	data, err := json.Marshal(env)
 	if err != nil {
-		logger.L().Error("failed to marshal broadcast event", zap.Error(err))
+		logger.L().Error("failed to marshal ingest envelope", zap.Error(err))
 		return
 	}
-	if err := s.producer.Publish(context.Background(), s.broadcastTopic, roomID, data); err != nil {
-		logger.L().Error("failed to publish broadcast event", zap.Error(err))
+	// Fire-and-forget: ingestion failures are logged, never block the pump.
+	if err := s.producer.Publish(context.Background(), s.ingestTopic, session.RoomID, data); err != nil {
+		logger.L().Error("failed to publish ingest event",
+			zap.Error(err),
+			zap.String("room", session.RoomID),
+			zap.String("type", msgType))
 	}
 }

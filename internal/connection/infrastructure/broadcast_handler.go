@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 
 	"github.com/spray272598/soundstage/internal/connection/domain"
+	"github.com/spray272598/soundstage/internal/pkg/event"
 )
 
-// BroadcastHandler consumes Kafka events and broadcasts them to local sessions.
+// BroadcastHandler consumes Kafka broadcast events and pushes them to local sessions.
 type BroadcastHandler struct {
 	hub domain.Hub
 }
@@ -19,7 +20,7 @@ func NewBroadcastHandler(hub domain.Hub) *BroadcastHandler {
 
 // Handle implements pkgkafka.Handler.
 func (h *BroadcastHandler) Handle(ctx context.Context, topic string, key string, payload []byte) error {
-	var evt domain.BroadcastEvent
+	var evt event.BroadcastEnvelope
 	if err := json.Unmarshal(payload, &evt); err != nil {
 		return err
 	}

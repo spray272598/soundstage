@@ -1,6 +1,10 @@
 package config
 
-import "github.com/spf13/viper"
+import (
+	"time"
+
+	"github.com/spf13/viper"
+)
 
 // Config is the root configuration object.
 type Config struct {
@@ -9,11 +13,12 @@ type Config struct {
 	WebSocket WebSocketConfig `mapstructure:"websocket"`
 	MySQL     MySQLConfig     `mapstructure:"mysql"`
 	Redis     RedisConfig     `mapstructure:"redis"`
-	Kafka     KafkaConfig     `mapstructure:"kafka"`
-	Asynq     AsynqConfig     `mapstructure:"asynq"`
-	Metrics   MetricsConfig   `mapstructure:"metrics"`
-	Log       LogConfig       `mapstructure:"log"`
-	AI        AIConfig        `mapstructure:"ai"`
+	Kafka      KafkaConfig      `mapstructure:"kafka"`
+	Asynq      AsynqConfig      `mapstructure:"asynq"`
+	Interaction InteractionConfig `mapstructure:"interaction"`
+	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	Log        LogConfig        `mapstructure:"log"`
+	AI         AIConfig         `mapstructure:"ai"`
 }
 
 // AppConfig holds application metadata.
@@ -61,6 +66,18 @@ type KafkaConfig struct {
 // AsynqConfig holds the asynq configuration.
 type AsynqConfig struct {
 	RedisAddr string `mapstructure:"redis_addr"`
+}
+
+// InteractionConfig holds the interaction-context tunables.
+type InteractionConfig struct {
+	// DanmakuRateLimit is the max danmaku per user per room within DanmakuRateWindow.
+	DanmakuRateLimit int `mapstructure:"danmaku_rate_limit"`
+	// DanmakuRateWindow is the sliding/fixed window for danmaku rate limiting.
+	DanmakuRateWindow time.Duration `mapstructure:"danmaku_rate_window"`
+	// ModerationKeywords is the demo keyword blocklist. Phase 4 swaps in AI moderation.
+	ModerationKeywords []string `mapstructure:"moderation_keywords"`
+	// GiftIdempotencyTTL is how long a gift idempotency key is remembered.
+	GiftIdempotencyTTL time.Duration `mapstructure:"gift_idempotency_ttl"`
 }
 
 // MetricsConfig holds the metrics server configuration.

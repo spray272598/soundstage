@@ -75,3 +75,73 @@ curl http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/online
 ```bash
 curl http://127.0.0.1:9091/metrics | grep soundstage
 ```
+
+## Step 5: Gifts, danmaku and likes (Phase 2)
+
+Gifts are a platform-wide catalog; rooms only decide whether gifting is on.
+Send a gift over REST or WebSocket — both hit the same `InterService`.
+
+```bash
+# List the gift catalog (seeded by scripts/sql/schema.sql).
+curl http://127.0.0.1:8080/api/v1/gifts
+
+# Send a gift (returns a gift_order with status "created").
+curl -X POST http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/gifts \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user001","gift_id":"g_rose","count":10}'
+
+# Resend with the same idempotency_key -> returns the same order (no double charge).
+curl -X POST http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/gifts \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user001","gift_id":"g_rose","count":10,"idempotency_key":"demo-1"}'
+```
+
+Over WebSocket (in Tab 1):
+
+```json
+{"type":"gift","payload":{"gift_id":"g_rocket","count":1}}
+```
+
+Danmaku goes through the same path: synchronous moderation + rate limit, then
+broadcast; persistence is enqueued to asynq and written to a day-sharded table
+asynchronously so the WS pump is never blocked.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/danmaku \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user001","text":"love this song"}'
+
+# A blocked keyword is dropped and never broadcast.
+curl -X POST http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/danmaku \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user001","text":"click my 广告 link"}'
+```
+
+Likes are counted in Redis and flushed to `room_stats` every 30s by the asynq
+scheduler.
+
+```bash
+curl -X POST "http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/like?user_id=user002"
+curl http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/likes
+```
+
+## Step 6: Gift leaderboard (day / week / month)
+
+Settlement increments the per-room, per-period sorted set in Redis. The rank
+is maintained incrementally at settlement time, never recomputed on read.
+
+```bash
+curl "http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/rank?period=day"
+curl "http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/rank?period=week"
+curl "http://127.0.0.1:8080/api/v1/rooms/$ROOM_ID/rank?period=month"
+```
+
+## Observability notes
+
+- `soundstage_interaction_danmaku_total{result="accepted|rejected"}`
+- `soundstage_interaction_gift_total{result="accepted|rejected"}`
+- `soundstage_interaction_like_total`
+- `soundstage_gift_order_status_total{status="created|settled|failed"}`
+- `soundstage_asynq_task_enqueued_total{type="interaction:persist_danmaku|interaction:settle_gift"}`
+- asynq queues are inspectable via `asynqmon` or the Redis `asynq_*` keys.
+

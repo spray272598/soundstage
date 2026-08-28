@@ -32,6 +32,15 @@ kafka:
 asynq:
   redis_addr: "localhost:6379"
 
+interaction:
+  danmaku_rate_limit: 10
+  danmaku_rate_window: 1s
+  moderation_keywords:
+    - "广告"
+    - "spam"
+    - "fuck"
+  gift_idempotency_ttl: 24h
+
 metrics:
   addr: ":9091"
   path: "/metrics"
