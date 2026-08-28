@@ -72,11 +72,11 @@ func (c *WebSocketConfig) WriteTimeoutDuration() time.Duration {
 
 // MySQLConfig holds the MySQL configuration.
 type MySQLConfig struct {
-	DSN           string `mapstructure:"dsn"`
-	MaxOpen       int    `mapstructure:"max_open"`
-	MaxIdle       int    `mapstructure:"max_idle"`
-	MaxLifetime   string `mapstructure:"max_lifetime"`    // e.g. "5m"
-	MaxIdleTime   string `mapstructure:"max_idle_time"`   // e.g. "1m"
+	DSN         string `mapstructure:"dsn"`
+	MaxOpen     int    `mapstructure:"max_open"`
+	MaxIdle     int    `mapstructure:"max_idle"`
+	MaxLifetime string `mapstructure:"max_lifetime"`  // e.g. "5m"
+	MaxIdleTime string `mapstructure:"max_idle_time"` // e.g. "1m"
 }
 
 // RedisConfig holds the Redis configuration.

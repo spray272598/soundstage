@@ -6,8 +6,8 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/spray272598/soundstage/internal/interaction/domain"
-	"github.com/spray272598/soundstage/internal/interaction/task"
 	"github.com/spray272598/soundstage/internal/interaction/infrastructure/asynqworker"
+	"github.com/spray272598/soundstage/internal/interaction/task"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
 )
 

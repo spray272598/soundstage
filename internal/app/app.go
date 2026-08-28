@@ -47,26 +47,26 @@ import (
 
 // Application holds the runtime dependencies of the modular monolith.
 type Application struct {
-	Config           *config.Config
-	DB               *gorm.DB
-	Redis            *pkgredis.Client
-	Hub              connDomain.Hub
-	Producer         pkgkafka.Producer
-	Consumer         pkgkafka.Consumer
-	Asynq            *asynq.Client
-	RoomHandler      *roomtransport.RoomHandler
-	WSHandler        *conntransport.WSHandler
-	InterHandler     *interactiontransport.InteractionHandler
-	MicHandler       *miclinktransport.MiclinkHandler
-	AIHandler        *aitransport.Handler
+	Config       *config.Config
+	DB           *gorm.DB
+	Redis        *pkgredis.Client
+	Hub          connDomain.Hub
+	Producer     pkgkafka.Producer
+	Consumer     pkgkafka.Consumer
+	Asynq        *asynq.Client
+	RoomHandler  *roomtransport.RoomHandler
+	WSHandler    *conntransport.WSHandler
+	InterHandler *interactiontransport.InteractionHandler
+	MicHandler   *miclinktransport.MiclinkHandler
+	AIHandler    *aitransport.Handler
 
-	ingestConsumer   *interactionapp.IngestConsumer
-	miclinkConsumer  *kafka.Consumer
-	miclinkIngest    *miclinkapp.MiclinkIngestConsumer
-	asynqMux         *asynq.ServeMux
-	asynqServer      *asynq.Server
-	scheduler        *asynq.Scheduler
-	batchPersister   *asynqworker.BatchPersister
+	ingestConsumer  *interactionapp.IngestConsumer
+	miclinkConsumer *kafka.Consumer
+	miclinkIngest   *miclinkapp.MiclinkIngestConsumer
+	asynqMux        *asynq.ServeMux
+	asynqServer     *asynq.Server
+	scheduler       *asynq.Scheduler
+	batchPersister  *asynqworker.BatchPersister
 }
 
 // New builds and wires the application.
@@ -220,25 +220,25 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 
 	return &Application{
-		Config:           cfg,
-		DB:               db,
-		Redis:            rdb,
-		Hub:              hub,
-		Producer:         producer,
-		Consumer:         consumer,
-		Asynq:            asynqClient,
-		RoomHandler:      roomHandler,
-		WSHandler:        wsHandler,
-		InterHandler:     interHandler,
-		MicHandler:       micHandler,
-		AIHandler:        aiHandler,
-		ingestConsumer:   ingestConsumer,
-		miclinkConsumer:  miclinkConsumer,
-		miclinkIngest:    miclinkIngest,
-		asynqMux:         mux,
-		asynqServer:      asynqServer,
-		scheduler:        scheduler,
-		batchPersister:   batchPersister,
+		Config:          cfg,
+		DB:              db,
+		Redis:           rdb,
+		Hub:             hub,
+		Producer:        producer,
+		Consumer:        consumer,
+		Asynq:           asynqClient,
+		RoomHandler:     roomHandler,
+		WSHandler:       wsHandler,
+		InterHandler:    interHandler,
+		MicHandler:      micHandler,
+		AIHandler:       aiHandler,
+		ingestConsumer:  ingestConsumer,
+		miclinkConsumer: miclinkConsumer,
+		miclinkIngest:   miclinkIngest,
+		asynqMux:        mux,
+		asynqServer:     asynqServer,
+		scheduler:       scheduler,
+		batchPersister:  batchPersister,
 	}, nil
 }
 

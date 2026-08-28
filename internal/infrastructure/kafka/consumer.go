@@ -13,12 +13,12 @@ import (
 
 // Consumer implements pkgkafka.Consumer using segmentio/kafka-go.
 type Consumer struct {
-	brokers      []string
-	groupID      string
+	brokers       []string
+	groupID       string
 	consumerCount int
-	readers      []*kafka.Reader
-	mu           sync.Mutex
-	closed       atomic.Bool
+	readers       []*kafka.Reader
+	mu            sync.Mutex
+	closed        atomic.Bool
 }
 
 // NewConsumer creates a new Consumer.

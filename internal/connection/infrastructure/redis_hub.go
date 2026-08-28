@@ -17,32 +17,33 @@ import (
 // RedisHub is a distributed implementation of domain.Hub using Redis for
 // session registry and Pub/Sub for cross-gateway message routing.
 type RedisHub struct {
-	rdb        *redis.Client
-	gatewayID  string
-	localHub   *Hub // local in-memory hub for sessions on this gateway
-	pubsub     *redis.PubSub
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	mu         sync.RWMutex
-	closed     bool
+	rdb       *redis.Client
+	gatewayID string
+	localHub  *Hub // local in-memory hub for sessions on this gateway
+	pubsub    *redis.PubSub
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	mu        sync.RWMutex
+	closed    bool
 }
 
 // SessionMeta stores session routing info in Redis.
 type SessionMeta struct {
-	GatewayID string `json:"gateway_id"`
-	RoomID    string `json:"room_id"`
-	UserID    string `json:"user_id"`
-	SessionID string `json:"session_id"`
+	GatewayID   string `json:"gateway_id"`
+	RoomID      string `json:"room_id"`
+	UserID      string `json:"user_id"`
+	SessionID   string `json:"session_id"`
 	ConnectedAt int64  `json:"connected_at"`
 }
 
 // BroadcastMsg is the message format for Redis Pub/Sub.
 type BroadcastMsg struct {
-	RoomID  string          `json:"room_id"`
-	Type    string          `json:"type"`
-	To      string          `json:"to,omitempty"` // empty = broadcast, set = unicast to user
-	Payload json.RawMessage `json:"payload"`
+	GatewayID string          `json:"gateway_id"` // origin gateway; receivers skip their own
+	RoomID    string          `json:"room_id"`
+	Type      string          `json:"type"`         // original domain.Message type (e.g. "danmaku")
+	To        string          `json:"to,omitempty"` // empty = broadcast, set = unicast to user
+	Payload   json.RawMessage `json:"payload"`      // raw domain.Message bytes
 }
 
 // NewRedisHub creates a new distributed Hub.
@@ -57,15 +58,19 @@ func NewRedisHub(rdb *redis.Client, gatewayID string) *RedisHub {
 	}
 }
 
+// broadcastChannel is the single global channel every gateway subscribes to.
+// Each gateway delivers only to its own local sessions, so a room's members
+// across all gateways each receive the message exactly once.
+const broadcastChannel = "soundstage:broadcast"
+
 // Start begins listening for cross-gateway messages.
 func (h *RedisHub) Start() error {
-	channel := fmt.Sprintf("soundstage:broadcast:%s", h.gatewayID)
-	h.pubsub = h.rdb.Subscribe(h.ctx, channel)
+	h.pubsub = h.rdb.Subscribe(h.ctx, broadcastChannel)
 
 	h.wg.Add(1)
 	go h.listenBroadcast()
 
-	logger.L().Info("redis hub started", zap.String("gateway_id", h.gatewayID), zap.String("channel", channel))
+	logger.L().Info("redis hub started", zap.String("gateway_id", h.gatewayID), zap.String("channel", broadcastChannel))
 	return nil
 }
 
@@ -107,6 +112,12 @@ func (h *RedisHub) handleRemoteBroadcast(payload string) {
 	var bm BroadcastMsg
 	if err := json.Unmarshal([]byte(payload), &bm); err != nil {
 		logger.L().Warn("invalid broadcast message", zap.Error(err))
+		return
+	}
+
+	// Skip messages we published ourselves: we already delivered them locally
+	// inside Broadcast/SendToUser, so re-delivering would duplicate.
+	if bm.GatewayID == h.gatewayID {
 		return
 	}
 
@@ -181,36 +192,42 @@ func (h *RedisHub) SendToUser(roomID string, userID string, msg []byte) {
 }
 
 func (h *RedisHub) publishBroadcast(roomID, to string, payload []byte) {
+	// Preserve the original event type so remote gateways forward it intact.
+	var m domain.Message
+	_ = json.Unmarshal(payload, &m)
+
 	bm := BroadcastMsg{
-		RoomID:  roomID,
-		Type:    "broadcast",
-		To:      to,
-		Payload: payload,
+		GatewayID: h.gatewayID,
+		RoomID:    roomID,
+		Type:      m.Type,
+		To:        to,
+		Payload:   payload,
 	}
 	data, _ := json.Marshal(bm)
 
-	// Publish to the global broadcast channel; each gateway subscribes to its own channel
-	// and filters by gatewayID. Simpler: publish to room-specific channel.
-	channel := fmt.Sprintf("soundstage:room:%s:broadcast", roomID)
-	if err := h.rdb.Publish(h.ctx, channel, data).Err(); err != nil {
+	// Publish to the single global channel; every gateway subscribes and
+	// delivers only to its local sessions (skipping its own echoes).
+	if err := h.rdb.Publish(h.ctx, broadcastChannel, data).Err(); err != nil {
 		logger.L().Error("publish broadcast failed", zap.Error(err), zap.String("room", roomID))
 	}
 }
 
 // RoomUserCount returns total connected sessions in a room across all gateways.
 func (h *RedisHub) RoomUserCount(roomID string) int {
-	// Fast path: local count
+	// Fast path: local count (used as a fallback when Redis is unavailable).
 	localCount := h.localHub.RoomUserCount(roomID)
 
-	// Add remote counts from Redis
+	// The room session set is shared across every gateway and already includes
+	// this gateway's local sessions, so SCARD is the authoritative total.
+	// Do NOT add localCount on top, or local sessions get counted twice.
 	roomKey := fmt.Sprintf("soundstage:room:%s:sessions", roomID)
-	remoteCount, err := h.rdb.SCard(h.ctx, roomKey).Result()
+	total, err := h.rdb.SCard(h.ctx, roomKey).Result()
 	if err != nil {
 		logger.L().Warn("redis scard failed", zap.Error(err), zap.String("room", roomID))
 		return localCount
 	}
 
-	return localCount + int(remoteCount)
+	return int(total)
 }
 
 // LocalHub returns the underlying in-memory hub for direct access.

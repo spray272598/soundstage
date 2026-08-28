@@ -39,44 +39,21 @@ func (c *RedisLikeCounter) Get(ctx context.Context, roomID string) (int64, error
 }
 
 // ScanRooms invokes fn for every room id that currently has a like counter.
-// Uses pipelining to batch GET commands for better performance.
+// fn only needs the room id, so we avoid the extra GET round-trips that a
+// pipeline of fetches would incur (the counter values are never consumed).
 func (c *RedisLikeCounter) ScanRooms(ctx context.Context, match string, fn func(roomID string) error) error {
 	iter := c.rdb.RDB().Scan(ctx, 0, match, 100).Iterator()
-	var keys []string
 	for iter.Next(ctx) {
 		key := iter.Val()
-		keys = append(keys, key)
-	}
-	if err := iter.Err(); err != nil {
-		return err
-	}
-
-	if len(keys) == 0 {
-		return nil
-	}
-
-	// Use pipeline to batch GET commands
-	pipe := c.rdb.RDB().Pipeline()
-	cmds := make([]*goredis.StringCmd, len(keys))
-	for i, key := range keys {
-		cmds[i] = pipe.Get(ctx, key)
-	}
-	if _, err := pipe.Exec(ctx); err != nil && err != goredis.Nil {
-		return err
-	}
-
-	for i, key := range keys {
 		idx := indexAfterColon(key)
 		if idx < 0 {
 			continue
 		}
-		roomID := key[idx:]
-		if err := fn(roomID); err != nil {
+		if err := fn(key[idx:]); err != nil {
 			return err
 		}
-		_ = cmds[i] // suppress unused warning
 	}
-	return nil
+	return iter.Err()
 }
 
 func indexAfterColon(s string) int {
