@@ -32,10 +32,11 @@ import (
 	miclinkpersist "github.com/spray272598/soundstage/internal/miclink/infrastructure/persistence"
 	miclinktransport "github.com/spray272598/soundstage/internal/miclink/transport"
 	"github.com/spray272598/soundstage/internal/pkg/config"
+	"github.com/spray272598/soundstage/internal/pkg/id"
 	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
-	"github.com/spray272598/soundstage/internal/pkg/redis"
+	pkgredis "github.com/spray272598/soundstage/internal/pkg/redis"
 	roomapp "github.com/spray272598/soundstage/internal/room/application"
 	roompersist "github.com/spray272598/soundstage/internal/room/infrastructure/persistence"
 	roomtransport "github.com/spray272598/soundstage/internal/room/transport"
@@ -46,25 +47,26 @@ import (
 
 // Application holds the runtime dependencies of the modular monolith.
 type Application struct {
-	Config       *config.Config
-	DB           *gorm.DB
-	Redis        *redis.Client
-	Hub          connDomain.Hub
-	Producer     pkgkafka.Producer
-	Consumer     pkgkafka.Consumer
-	Asynq        *asynq.Client
-	RoomHandler  *roomtransport.RoomHandler
-	WSHandler    *conntransport.WSHandler
-	InterHandler *interactiontransport.InteractionHandler
-	MicHandler   *miclinktransport.MiclinkHandler
-	AIHandler    *aitransport.Handler
+	Config           *config.Config
+	DB               *gorm.DB
+	Redis            *pkgredis.Client
+	Hub              connDomain.Hub
+	Producer         pkgkafka.Producer
+	Consumer         pkgkafka.Consumer
+	Asynq            *asynq.Client
+	RoomHandler      *roomtransport.RoomHandler
+	WSHandler        *conntransport.WSHandler
+	InterHandler     *interactiontransport.InteractionHandler
+	MicHandler       *miclinktransport.MiclinkHandler
+	AIHandler        *aitransport.Handler
 
-	ingestConsumer  *interactionapp.IngestConsumer
-	miclinkConsumer *kafka.Consumer
-	miclinkIngest   *miclinkapp.MiclinkIngestConsumer
-	asynqMux        *asynq.ServeMux
-	asynqServer     *asynq.Server
-	scheduler       *asynq.Scheduler
+	ingestConsumer   *interactionapp.IngestConsumer
+	miclinkConsumer  *kafka.Consumer
+	miclinkIngest    *miclinkapp.MiclinkIngestConsumer
+	asynqMux         *asynq.ServeMux
+	asynqServer      *asynq.Server
+	scheduler        *asynq.Scheduler
+	batchPersister   *asynqworker.BatchPersister
 }
 
 // New builds and wires the application.
@@ -73,12 +75,12 @@ func New(cfg *config.Config) (*Application, error) {
 		return nil, err
 	}
 
-	db, err := newDB(cfg.MySQL.DSN)
+	db, err := newDB(&cfg.MySQL)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: %w", err)
 	}
 
-	rdb := redis.New(cfg.Redis.Addr, cfg.Redis.DB, cfg.Redis.PoolSize)
+	rdb := pkgredis.New(cfg.Redis.Addr, cfg.Redis.DB, cfg.Redis.PoolSize)
 	if err := rdb.Ping(context.Background()); err != nil {
 		return nil, fmt.Errorf("redis: %w", err)
 	}
@@ -89,13 +91,27 @@ func New(cfg *config.Config) (*Application, error) {
 	roomHandler := roomtransport.NewRoomHandler(roomSvc)
 
 	// --- connection context ---
-	hub := conninfra.NewHub()
+	var hub connDomain.Hub
+	if cfg.Hub.Mode == "redis" {
+		gatewayID := cfg.Hub.GatewayID
+		if gatewayID == "" {
+			gatewayID = fmt.Sprintf("gw-%s", id.New())
+		}
+		redisHub := conninfra.NewRedisHub(rdb.RDB(), gatewayID)
+		if err := redisHub.Start(); err != nil {
+			return nil, fmt.Errorf("redis hub start: %w", err)
+		}
+		hub = redisHub
+	} else {
+		hub = conninfra.NewHub()
+	}
 	producer := kafka.NewProducer(cfg.Kafka.Brokers)
 	broadcastTopic := cfg.Kafka.TopicPrefix + "broadcast"
 	ingestTopic := cfg.Kafka.TopicPrefix + "ingest"
-	connSvc := application.NewConnectionService(hub, producer, ingestTopic)
-	wsHandler := conntransport.NewWSHandler(connSvc)
-	consumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-gateway")
+	connSvc := application.NewConnectionService(hub, producer, ingestTopic, cfg.WebSocket)
+	wsHandler := conntransport.NewWSHandler(connSvc, cfg.WebSocket)
+	consumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-gateway").
+		WithConsumerCount(cfg.Kafka.ConsumerCount)
 
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Asynq.RedisAddr})
 
@@ -121,7 +137,8 @@ func New(cfg *config.Config) (*Application, error) {
 	)
 	micHandler := miclinktransport.NewMiclinkHandler(micSvc, pkSvc)
 	miclinkIngest := miclinkapp.NewMiclinkIngestConsumer(micSvc, pkSvc)
-	miclinkConsumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-miclink")
+	miclinkConsumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-miclink").
+		WithConsumerCount(cfg.Kafka.ConsumerCount)
 
 	// --- shared interaction infra (also used by the AI moderator) ---
 	broadcaster := interactionmsg.NewKafkaBroadcaster(producer, broadcastTopic)
@@ -162,6 +179,10 @@ func New(cfg *config.Config) (*Application, error) {
 
 	enqueuer := interactionmsg.NewAsynqTaskEnqueuer(asynqClient)
 
+	// Batch persister for high-throughput async persistence
+	batchPersister := asynqworker.NewBatchPersister(asynqClient, asynqworker.DefaultBatchConfig())
+	enqueuer.WithBatchPersister(batchPersister)
+
 	interSvc := interactionapp.NewInterService(
 		giftRepo, orderRepo, danmakuRepo,
 		aiSvc, rateLimiter, muter, rankStore, likeCounter,
@@ -199,24 +220,25 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 
 	return &Application{
-		Config:          cfg,
-		DB:              db,
-		Redis:           rdb,
-		Hub:             hub,
-		Producer:        producer,
-		Consumer:        consumer,
-		Asynq:           asynqClient,
-		RoomHandler:     roomHandler,
-		WSHandler:       wsHandler,
-		InterHandler:    interHandler,
-		MicHandler:      micHandler,
-		AIHandler:       aiHandler,
-		ingestConsumer:  ingestConsumer,
-		miclinkConsumer: miclinkConsumer,
-		miclinkIngest:   miclinkIngest,
-		asynqMux:        mux,
-		asynqServer:     asynqServer,
-		scheduler:       scheduler,
+		Config:           cfg,
+		DB:               db,
+		Redis:            rdb,
+		Hub:              hub,
+		Producer:         producer,
+		Consumer:         consumer,
+		Asynq:            asynqClient,
+		RoomHandler:      roomHandler,
+		WSHandler:        wsHandler,
+		InterHandler:     interHandler,
+		MicHandler:       micHandler,
+		AIHandler:        aiHandler,
+		ingestConsumer:   ingestConsumer,
+		miclinkConsumer:  miclinkConsumer,
+		miclinkIngest:    miclinkIngest,
+		asynqMux:         mux,
+		asynqServer:      asynqServer,
+		scheduler:        scheduler,
+		batchPersister:   batchPersister,
 	}, nil
 }
 
@@ -320,10 +342,14 @@ func (a *Application) Shutdown(ctx context.Context) error {
 	logger.L().Info("soundstage shutting down")
 	a.scheduler.Shutdown()
 	a.asynqServer.Shutdown()
+	if a.batchPersister != nil {
+		a.batchPersister.Stop()
+	}
 	_ = a.Asynq.Close()
 	_ = a.Consumer.Close()
 	_ = a.miclinkConsumer.Close()
 	_ = a.Producer.Close()
+	_ = a.Hub.Close()
 	sqlDB, err := a.DB.DB()
 	if err == nil {
 		_ = sqlDB.Close()
@@ -359,8 +385,8 @@ func mustDuration(s string, def time.Duration) time.Duration {
 	return def
 }
 
-func newDB(dsn string) (*gorm.DB, error) {
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+func newDB(cfg *config.MySQLConfig) (*gorm.DB, error) {
+	db, err := gorm.Open(mysql.Open(cfg.DSN), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +394,13 @@ func newDB(dsn string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	sqlDB.SetMaxOpenConns(25)
-	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetMaxOpenConns(cfg.MaxOpen)
+	sqlDB.SetMaxIdleConns(cfg.MaxIdle)
+	if d := mustDuration(cfg.MaxLifetime, 5*time.Minute); d > 0 {
+		sqlDB.SetConnMaxLifetime(d)
+	}
+	if d := mustDuration(cfg.MaxIdleTime, 1*time.Minute); d > 0 {
+		sqlDB.SetConnMaxIdleTime(d)
+	}
 	return db, nil
 }

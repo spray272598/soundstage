@@ -17,6 +17,7 @@ type Config struct {
 	Asynq       AsynqConfig       `mapstructure:"asynq"`
 	Interaction InteractionConfig `mapstructure:"interaction"`
 	MicLink     MicLinkConfig     `mapstructure:"miclink"`
+	Hub         HubConfig         `mapstructure:"hub"`
 	Metrics     MetricsConfig     `mapstructure:"metrics"`
 	Log         LogConfig         `mapstructure:"log"`
 	AI          AIConfig          `mapstructure:"ai"`
@@ -38,17 +39,44 @@ type HTTPConfig struct {
 
 // WebSocketConfig holds the WebSocket server configuration.
 type WebSocketConfig struct {
-	Addr           string `mapstructure:"addr"`
-	ReadTimeout    string `mapstructure:"read_timeout"`
-	WriteTimeout   string `mapstructure:"write_timeout"`
-	MaxMessageSize int64  `mapstructure:"max_message_size"`
+	Addr              string `mapstructure:"addr"`
+	ReadTimeout       string `mapstructure:"read_timeout"`
+	WriteTimeout      string `mapstructure:"write_timeout"`
+	MaxMessageSize    int64  `mapstructure:"max_message_size"`
+	EnableCompression bool   `mapstructure:"enable_compression"`
+	ReadBufferSize    int    `mapstructure:"read_buffer_size"`
+	WriteBufferSize   int    `mapstructure:"write_buffer_size"`
+}
+
+// ReadTimeoutDuration returns the parsed read timeout duration.
+func (c *WebSocketConfig) ReadTimeoutDuration() time.Duration {
+	if c.ReadTimeout == "" {
+		return 60 * time.Second
+	}
+	if d, err := time.ParseDuration(c.ReadTimeout); err == nil {
+		return d
+	}
+	return 60 * time.Second
+}
+
+// WriteTimeoutDuration returns the parsed write timeout duration.
+func (c *WebSocketConfig) WriteTimeoutDuration() time.Duration {
+	if c.WriteTimeout == "" {
+		return 10 * time.Second
+	}
+	if d, err := time.ParseDuration(c.WriteTimeout); err == nil {
+		return d
+	}
+	return 10 * time.Second
 }
 
 // MySQLConfig holds the MySQL configuration.
 type MySQLConfig struct {
-	DSN     string `mapstructure:"dsn"`
-	MaxOpen int    `mapstructure:"max_open"`
-	MaxIdle int    `mapstructure:"max_idle"`
+	DSN           string `mapstructure:"dsn"`
+	MaxOpen       int    `mapstructure:"max_open"`
+	MaxIdle       int    `mapstructure:"max_idle"`
+	MaxLifetime   string `mapstructure:"max_lifetime"`    // e.g. "5m"
+	MaxIdleTime   string `mapstructure:"max_idle_time"`   // e.g. "1m"
 }
 
 // RedisConfig holds the Redis configuration.
@@ -60,8 +88,9 @@ type RedisConfig struct {
 
 // KafkaConfig holds the Kafka configuration.
 type KafkaConfig struct {
-	Brokers     []string `mapstructure:"brokers"`
-	TopicPrefix string   `mapstructure:"topic_prefix"`
+	Brokers       []string `mapstructure:"brokers"`
+	TopicPrefix   string   `mapstructure:"topic_prefix"`
+	ConsumerCount int      `mapstructure:"consumer_count"` // Number of parallel consumers per topic
 }
 
 // AsynqConfig holds the asynq configuration.
@@ -101,6 +130,14 @@ type MetricsConfig struct {
 type LogConfig struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
+}
+
+// HubConfig holds the connection hub configuration.
+type HubConfig struct {
+	// Mode: "memory" (single instance) or "redis" (multi-gateway distributed)
+	Mode string `mapstructure:"mode"`
+	// GatewayID identifies this gateway instance. Auto-generated if empty.
+	GatewayID string `mapstructure:"gateway_id"`
 }
 
 // AIConfig holds the AI provider configuration for the AI room moderator.

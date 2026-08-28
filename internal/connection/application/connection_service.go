@@ -7,6 +7,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/spray272598/soundstage/internal/connection/domain"
+	"github.com/spray272598/soundstage/internal/pkg/config"
 	"github.com/spray272598/soundstage/internal/pkg/event"
 	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
@@ -19,14 +20,16 @@ type ConnectionService struct {
 	hub         domain.Hub
 	producer    pkgkafka.Producer
 	ingestTopic string
+	wsConfig    config.WebSocketConfig
 }
 
 // NewConnectionService creates a new ConnectionService.
-func NewConnectionService(hub domain.Hub, producer pkgkafka.Producer, ingestTopic string) *ConnectionService {
+func NewConnectionService(hub domain.Hub, producer pkgkafka.Producer, ingestTopic string, wsConfig config.WebSocketConfig) *ConnectionService {
 	return &ConnectionService{
 		hub:         hub,
 		producer:    producer,
 		ingestTopic: ingestTopic,
+		wsConfig:    wsConfig,
 	}
 }
 
@@ -49,9 +52,13 @@ func (s *ConnectionService) readPump(session *domain.Session) {
 		session.Conn.Close()
 	}()
 
-	session.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	readTimeout := s.wsConfig.ReadTimeoutDuration()
+	if readTimeout == 0 {
+		readTimeout = 60 * time.Second
+	}
+	session.Conn.SetReadDeadline(time.Now().Add(readTimeout))
 	session.Conn.SetPongHandler(func(string) error {
-		session.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		session.Conn.SetReadDeadline(time.Now().Add(readTimeout))
 		return nil
 	})
 
@@ -91,7 +98,16 @@ func (s *ConnectionService) readPump(session *domain.Session) {
 }
 
 func (s *ConnectionService) writePump(session *domain.Session) {
-	ticker := time.NewTicker(30 * time.Second)
+	writeTimeout := s.wsConfig.WriteTimeoutDuration()
+	if writeTimeout == 0 {
+		writeTimeout = 10 * time.Second
+	}
+	pingInterval := writeTimeout / 3
+	if pingInterval < 10*time.Second {
+		pingInterval = 10 * time.Second
+	}
+
+	ticker := time.NewTicker(pingInterval)
 	defer func() {
 		ticker.Stop()
 		session.Conn.Close()
@@ -100,7 +116,7 @@ func (s *ConnectionService) writePump(session *domain.Session) {
 	for {
 		select {
 		case msg, ok := <-session.Send:
-			session.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			session.Conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if !ok {
 				_ = session.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
@@ -111,7 +127,7 @@ func (s *ConnectionService) writePump(session *domain.Session) {
 			metrics.WSMessagesTotal.WithLabelValues("broadcast", "out").Inc()
 
 		case <-ticker.C:
-			session.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			session.Conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if err := session.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

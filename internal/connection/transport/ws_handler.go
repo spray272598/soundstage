@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/spray272598/soundstage/internal/connection/application"
 	"github.com/spray272598/soundstage/internal/connection/domain"
+	"github.com/spray272598/soundstage/internal/pkg/config"
 	"github.com/spray272598/soundstage/internal/pkg/id"
 )
 
@@ -14,14 +15,28 @@ import (
 type WSHandler struct {
 	svc      *application.ConnectionService
 	upgrader websocket.Upgrader
+	cfg      config.WebSocketConfig
 }
 
-// NewWSHandler creates a new WSHandler.
-func NewWSHandler(svc *application.ConnectionService) *WSHandler {
+// NewWSHandler creates a new WSHandler with production-grade settings.
+func NewWSHandler(svc *application.ConnectionService, cfg config.WebSocketConfig) *WSHandler {
+	readBufSize := cfg.ReadBufferSize
+	if readBufSize == 0 {
+		readBufSize = 4096
+	}
+	writeBufSize := cfg.WriteBufferSize
+	if writeBufSize == 0 {
+		writeBufSize = 4096
+	}
+
 	return &WSHandler{
 		svc: svc,
+		cfg: cfg,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin:       func(r *http.Request) bool { return true },
+			ReadBufferSize:    readBufSize,
+			WriteBufferSize:   writeBufSize,
+			EnableCompression: cfg.EnableCompression,
 		},
 	}
 }
@@ -43,6 +58,9 @@ func (h *WSHandler) handle(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	// Set read limit to prevent OOM from large messages
+	conn.SetReadLimit(h.cfg.MaxMessageSize)
 
 	session := &domain.Session{
 		ID:     id.New(),

@@ -15,21 +15,32 @@ websocket:
   read_timeout: 60s
   write_timeout: 10s
   max_message_size: 8192
+  enable_compression: true
+  read_buffer_size: 4096
+  write_buffer_size: 4096
 
 mysql:
   dsn: "root:root@tcp(localhost:3306)/soundstage?charset=utf8mb4&parseTime=True&loc=Local"
   max_open: 25
   max_idle: 5
+  max_lifetime: "5m"
+  max_idle_time: "1m"
 
 redis:
   addr: "localhost:6379"
   db: 0
   pool_size: 20
 
+hub:
+  # mode: "memory" (single instance) or "redis" (multi-gateway)
+  mode: "memory"
+  gateway_id: ""  # auto-generated if empty
+
 kafka:
   brokers:
     - "localhost:9092"
   topic_prefix: "soundstage."
+  consumer_count: 3  # Parallel consumers per topic
 
 asynq:
   redis_addr: "localhost:6379"

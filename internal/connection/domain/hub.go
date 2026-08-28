@@ -9,4 +9,6 @@ type Hub interface {
 	// room. Used for targeted WebRTC signaling (offer/answer/ice).
 	SendToUser(roomID string, userID string, message []byte)
 	RoomUserCount(roomID string) int
+	// Close releases resources.
+	Close() error
 }

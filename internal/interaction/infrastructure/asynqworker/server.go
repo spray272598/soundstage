@@ -1,5 +1,3 @@
-// Package asynqworker wires the background task handlers (danmaku persistence,
-// gift settlement, like flush) to an asynq server and scheduler.
 package asynqworker
 
 import (
@@ -26,12 +24,13 @@ func NewScheduler(redisAddr string) *asynq.Scheduler {
 
 // Deps bundles every port the task handlers need.
 type Deps struct {
-	Danmaku domain.DanmakuRepository
-	Orders  domain.GiftOrderRepository
-	Rank    domain.RankStore
-	Likes   *cache.RedisLikeCounter
-	Stats   *persistence.GormRoomStatsRepository
-	RDB     *redis.Client
+	Danmaku     domain.DanmakuRepository
+	Orders      domain.GiftOrderRepository
+	Rank        domain.RankStore
+	Likes       *cache.RedisLikeCounter
+	Stats       *persistence.GormRoomStatsRepository
+	RDB         *redis.Client
+	BatchPersister *BatchPersister // optional batch persister for high throughput
 }
 
 // Register installs all handlers on the given mux.

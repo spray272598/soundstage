@@ -36,3 +36,13 @@ func (c *Client) Close() error {
 func (c *Client) RDB() *redis.Client {
 	return c.rdb
 }
+
+// Pipeline returns a new pipeline for batched commands.
+func (c *Client) Pipeline() redis.Pipeliner {
+	return c.rdb.Pipeline()
+}
+
+// Pipelined executes fn within a pipeline.
+func (c *Client) Pipelined(ctx context.Context, fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	return c.rdb.Pipelined(ctx, fn)
+}

@@ -3,7 +3,10 @@
 // here avoids an infrastructure -> application import cycle.
 package task
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Asynq task type names.
 const (
@@ -25,10 +28,40 @@ type PersistDanmakuPayload struct {
 	CreatedAt time.Time
 }
 
+func (p PersistDanmakuPayload) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ID        string    `json:"id"`
+		RoomID    string    `json:"room_id"`
+		UserID    string    `json:"user_id"`
+		Content   string    `json:"content"`
+		Status    string    `json:"status"`
+		CreatedAt time.Time `json:"created_at"`
+	}{
+		ID:        p.ID,
+		RoomID:    p.RoomID,
+		UserID:    p.UserID,
+		Content:   p.Content,
+		Status:    p.Status,
+		CreatedAt: p.CreatedAt,
+	})
+}
+
 // SettleGiftPayload is the payload for TypeSettleGift.
 type SettleGiftPayload struct {
 	OrderID string
 }
 
+func (p SettleGiftPayload) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		OrderID string `json:"order_id"`
+	}{
+		OrderID: p.OrderID,
+	})
+}
+
 // FlushLikesPayload is the payload for TypeFlushLikes (no fields yet).
 type FlushLikesPayload struct{}
+
+func (p FlushLikesPayload) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct{}{})
+}

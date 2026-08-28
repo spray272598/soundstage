@@ -109,3 +109,19 @@ func (b *roomBucket) count() int {
 
 // Compile-time check.
 var _ domain.Hub = (*Hub)(nil)
+
+// Close releases resources (no-op for in-memory hub).
+func (h *Hub) Close() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, bucket := range h.rooms {
+		bucket.mu.Lock()
+		for _, s := range bucket.sessions {
+			close(s.Send)
+		}
+		bucket.sessions = nil
+		bucket.mu.Unlock()
+	}
+	h.rooms = nil
+	return nil
+}
