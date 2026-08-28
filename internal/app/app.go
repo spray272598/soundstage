@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spray272598/soundstage/internal/infrastructure/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/config"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
+	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/redis"
 	"github.com/spray272598/soundstage/internal/room/application"
 	"github.com/spray272598/soundstage/internal/room/infrastructure/persistence"
@@ -24,6 +26,7 @@ type Application struct {
 	Config      *config.Config
 	DB          *gorm.DB
 	Redis       *redis.Client
+	Producer    pkgkafka.Producer
 	RoomHandler *transport.RoomHandler
 }
 
@@ -46,11 +49,13 @@ func New(cfg *config.Config) (*Application, error) {
 	roomRepo := persistence.NewGormRoomRepository(db)
 	roomSvc := application.NewRoomService(roomRepo)
 	roomHandler := transport.NewRoomHandler(roomSvc)
+	producer := kafka.NewProducer(cfg.Kafka.Brokers)
 
 	return &Application{
 		Config:      cfg,
 		DB:          db,
 		Redis:       rdb,
+		Producer:    producer,
 		RoomHandler: roomHandler,
 	}, nil
 }
@@ -104,6 +109,7 @@ func (a *Application) Run(ctx context.Context) error {
 // Shutdown releases resources gracefully.
 func (a *Application) Shutdown(ctx context.Context) error {
 	logger.L().Info("soundstage shutting down")
+	_ = a.Producer.Close()
 	sqlDB, err := a.DB.DB()
 	if err == nil {
 		_ = sqlDB.Close()
