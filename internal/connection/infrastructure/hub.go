@@ -1,7 +1,9 @@
 package infrastructure
 
 import (
+	"context"
 	"sync"
+	"time"
 
 	"github.com/spray272598/soundstage/internal/connection/domain"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
@@ -124,4 +126,37 @@ func (h *Hub) Close() error {
 	}
 	h.rooms = nil
 	return nil
+}
+
+// Shutdown gracefully drains all connections with a timeout.
+func (h *Hub) Shutdown(ctx context.Context) error {
+	h.mu.Lock()
+	var wg sync.WaitGroup
+	for _, bucket := range h.rooms {
+		bucket.mu.Lock()
+		for _, s := range bucket.sessions {
+			wg.Add(1)
+			go func(s *domain.Session) {
+				defer wg.Done()
+				s.Cancel()
+				// Give the write pump a moment to send close frame
+				time.Sleep(100 * time.Millisecond)
+			}(s)
+		}
+		bucket.mu.Unlock()
+	}
+	h.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

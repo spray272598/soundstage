@@ -1,0 +1,85 @@
+{
+  "cases": [
+    {
+      "name": "mute_user",
+      "user_message": "把用户 user123 禁言 10 分钟",
+      "expected_tool": "mute",
+      "expected_args": {
+        "room_id": "test-room",
+        "user_id": "user123",
+        "duration": "10m"
+      },
+      "description": "测试禁言工具调用"
+    },
+    {
+      "name": "unmute_user",
+      "user_message": "把用户 user456 解除禁言",
+      "expected_tool": "unmute",
+      "expected_args": {
+        "room_id": "test-room",
+        "user_id": "user456"
+      },
+      "description": "测试解除禁言工具调用"
+    },
+    {
+      "name": "query_room_status",
+      "user_message": "现在房间里有多少人？",
+      "expected_tool": "query_room_status",
+      "expected_args": {
+        "room_id": "test-room"
+      },
+      "description": "测试查询房间状态工具调用"
+    },
+    {
+      "name": "query_leaderboard",
+      "user_message": "今天的礼物榜前三是谁？",
+      "expected_tool": "query_leaderboard",
+      "expected_args": {
+        "room_id": "test-room",
+        "period": "day",
+        "top_n": 3
+      },
+      "description": "测试查询排行榜工具调用"
+    },
+    {
+      "name": "query_pk_status",
+      "user_message": "现在的PK比分是多少？",
+      "expected_tool": "query_pk_status",
+      "expected_args": {
+        "room_id": "test-room"
+      },
+      "description": "测试查询PK状态工具调用"
+    },
+    {
+      "name": "mute_with_seconds",
+      "user_message": "禁言用户 baduser 30 秒",
+      "expected_tool": "mute",
+      "expected_args": {
+        "room_id": "test-room",
+        "user_id": "baduser",
+        "duration": "30s"
+      },
+      "description": "测试秒级禁言工具调用"
+    },
+    {
+      "name": "query_room_status_alias",
+      "user_message": "当前在线人数？",
+      "expected_tool": "query_room_status",
+      "expected_args": {
+        "room_id": "test-room"
+      },
+      "description": "测试查询在线人数别名"
+    },
+    {
+      "name": "query_weekly_leaderboard",
+      "user_message": "本周礼物榜前五",
+      "expected_tool": "query_leaderboard",
+      "expected_args": {
+        "room_id": "test-room",
+        "period": "week",
+        "top_n": 5
+      },
+      "description": "测试周榜查询"
+    }
+  ]
+}

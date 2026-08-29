@@ -16,6 +16,7 @@ import (
 	"time"
 
 	aidomain "github.com/spray272598/soundstage/internal/ai/domain"
+	"github.com/spray272598/soundstage/internal/pkg/resilience"
 )
 
 // MaxLLMRetries is the retry budget for transient LLM errors (429 / 5xx).
@@ -26,11 +27,16 @@ var ErrContextOverflow = errors.New("llm: context window overflow")
 
 // Gateway is an OpenAI-compatible chat client supporting native tool calling.
 type Gateway struct {
-	apiKey     string
-	apiBase    string
-	model      string
-	client     *http.Client
-	maxRetries int
+	apiKey       string
+	apiBase      string
+	model        string
+	client       *http.Client
+	maxRetries   int
+
+	// Resilience patterns
+	circuitBreaker *resilience.CircuitBreaker
+	retryPolicy    *resilience.RetryPolicy
+	mockFallback   aidomain.Gateway // Fallback to mock when LLM fails
 }
 
 // NewGateway builds a Gateway. Empty apiBase defaults to OpenAI; empty model
@@ -49,6 +55,18 @@ func NewGateway(apiKey, apiBase, model string) *Gateway {
 		model:      model,
 		client:     &http.Client{Timeout: 180 * time.Second},
 		maxRetries: MaxLLMRetries,
+		// Circuit breaker: opens after 5 failures, tries to close after 30s
+		circuitBreaker: resilience.NewCircuitBreaker(resilience.DefaultCircuitBreakerConfig()),
+		// Retry policy: 3 retries with exponential backoff
+		retryPolicy: &resilience.RetryPolicy{
+			MaxRetries: 3,
+			BaseDelay:  200 * time.Millisecond,
+			MaxDelay:   5 * time.Second,
+			Multiplier: 2.0,
+			Jitter:     0.1,
+		},
+		// Mock fallback for graceful degradation
+		mockFallback: NewMock(),
 	}
 }
 
@@ -138,39 +156,71 @@ type streamChunk struct {
 
 // Generate returns a single completion (tool calls included if any).
 func (g *Gateway) Generate(ctx context.Context, req *aidomain.ChatRequest) (*aidomain.ChatResponse, error) {
-	return g.doWithRetry(ctx, req, false, nil)
+	return g.executeWithResilience(ctx, req, false, nil)
 }
 
 // GenerateStream streams text deltas and returns the full completion.
 func (g *Gateway) GenerateStream(ctx context.Context, req *aidomain.ChatRequest, onDelta func(aidomain.StreamDelta)) (*aidomain.ChatResponse, error) {
-	return g.doWithRetry(ctx, req, true, onDelta)
+	return g.executeWithResilience(ctx, req, true, onDelta)
 }
 
-func (g *Gateway) doWithRetry(ctx context.Context, req *aidomain.ChatRequest, stream bool, onDelta func(aidomain.StreamDelta)) (*aidomain.ChatResponse, error) {
-	var lastErr error
-	for attempt := 0; attempt <= g.maxRetries; attempt++ {
-		resp, err := g.do(ctx, req, stream, onDelta)
-		if err == nil {
-			return resp, nil
-		}
-		lastErr = err
-		status := extractStatus(err)
-		if status == 0 || status == 400 || status == 401 || status == 403 {
-			// Non-retryable.
-			if status == 400 && isContextOverflow(err.Error()) {
-				return nil, ErrContextOverflow
-			}
-			return nil, err
-		}
-		// 429 / 5xx -> backoff then retry.
-		backoff := retryBackoff(attempt + 1)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(backoff):
-		}
+func (g *Gateway) executeWithResilience(ctx context.Context, req *aidomain.ChatRequest, stream bool, onDelta func(aidomain.StreamDelta)) (*aidomain.ChatResponse, error) {
+	// If no API key configured, use mock directly
+	if g.apiKey == "" {
+		return g.mockFallback.Generate(ctx, req)
 	}
-	return nil, fmt.Errorf("llm: %d retries exhausted: %w", g.maxRetries, lastErr)
+
+	// Use circuit breaker with retry and mock fallback
+	primary := func(ctx context.Context) (*aidomain.ChatResponse, error) {
+		return g.do(ctx, req, stream, onDelta)
+	}
+
+	fallback := func(ctx context.Context, primaryErr error) (*aidomain.ChatResponse, error) {
+		// Log the fallback
+		// logger.L().Warn("LLM primary failed, falling back to mock", zap.Error(primaryErr))
+		return g.mockFallback.Generate(ctx, req)
+	}
+
+	// Circuit breaker config
+	cbCfg := resilience.DefaultCircuitBreakerConfig()
+
+	// Retry policy
+	rp := &resilience.RetryPolicy{
+		MaxRetries:  3,
+		BaseDelay:   200 * time.Millisecond,
+		MaxDelay:    5 * time.Second,
+		Multiplier:  2.0,
+		Jitter:      0.1,
+		IsRetryable: func(err error) bool {
+			// Retry on 429, 5xx, network errors
+			status := extractStatus(err)
+			return status == 429 || (status >= 500 && status < 600)
+		},
+	}
+
+	// Execute with resilience
+	resilientClient := resilience.NewResilientClient(resilience.ResilientClientConfig{
+		CircuitBreaker: &cbCfg,
+		RetryPolicy:    rp,
+		Timeout:        60 * time.Second,
+		Fallback: func(ctx context.Context, err error) (any, error) {
+			return fallback(ctx, err)
+		},
+		OnFallback: func(ctx context.Context, err error) {
+			// Could emit metrics here
+		},
+	})
+
+	result, err := resilientClient.ExecuteWithFallback(ctx, func(ctx context.Context) (any, error) {
+		return primary(ctx)
+	}, func(ctx context.Context, err error) (any, error) {
+		return fallback(ctx, err)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return result.(*aidomain.ChatResponse), nil
 }
 
 func (g *Gateway) do(ctx context.Context, req *aidomain.ChatRequest, stream bool, onDelta func(aidomain.StreamDelta)) (*aidomain.ChatResponse, error) {

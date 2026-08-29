@@ -11,6 +11,7 @@ type Config struct {
 	App         AppConfig         `mapstructure:"app"`
 	HTTP        HTTPConfig        `mapstructure:"http"`
 	WebSocket   WebSocketConfig   `mapstructure:"websocket"`
+	Merger      MergerConfig      `mapstructure:"merger"`
 	MySQL       MySQLConfig       `mapstructure:"mysql"`
 	Redis       RedisConfig       `mapstructure:"redis"`
 	Kafka       KafkaConfig       `mapstructure:"kafka"`
@@ -21,6 +22,8 @@ type Config struct {
 	Metrics     MetricsConfig     `mapstructure:"metrics"`
 	Log         LogConfig         `mapstructure:"log"`
 	AI          AIConfig          `mapstructure:"ai"`
+	Tracing     TracingConfig     `mapstructure:"tracing"`
+	Storage     StorageConfig     `mapstructure:"storage"`
 }
 
 // AppConfig holds application metadata.
@@ -68,6 +71,19 @@ func (c *WebSocketConfig) WriteTimeoutDuration() time.Duration {
 		return d
 	}
 	return 10 * time.Second
+}
+
+// MergerConfig holds the message merger configuration.
+type MergerConfig struct {
+	// WorkerCount is the number of merge workers for room messages.
+	// Each worker handles a subset of rooms via consistent hashing.
+	WorkerCount int `mapstructure:"worker_count"`
+	// ChannelSize is the buffer size for the merger input channel.
+	ChannelSize int `mapstructure:"channel_size"`
+	// MaxBatchSize is the maximum number of messages to batch before flushing.
+	MaxBatchSize int `mapstructure:"max_batch_size"`
+	// MaxDelay is the maximum time to wait before flushing a partial batch.
+	MaxDelay time.Duration `mapstructure:"max_delay"`
 }
 
 // MySQLConfig holds the MySQL configuration.
@@ -154,6 +170,10 @@ type AIConfig struct {
 	EmbeddingModel   string `mapstructure:"embedding_model"`
 	EmbeddingBaseURL string `mapstructure:"embedding_base_url"`
 
+	// VectorStore configures the vector database backend for RAG.
+	// Type: "memory" (default, in-process), "pgvector", "qdrant"
+	VectorStore VectorStoreConfig `mapstructure:"vector_store"`
+
 	// ModerationKeywords is a cheap first-line keyword blocklist. The AI
 	// moderator still runs an LLM audit, but messages matching these keywords
 	// are rejected before any LLM call to save latency and cost.
@@ -165,6 +185,66 @@ type AIConfig struct {
 	AgentMaxRounds int `mapstructure:"agent_max_rounds"`
 	// AgentTimeout caps a single agent run.
 	AgentTimeout time.Duration `mapstructure:"agent_timeout"`
+}
+
+// VectorStoreConfig holds the vector store configuration.
+type VectorStoreConfig struct {
+	// Type: "memory" | "pgvector" | "qdrant"
+	Type string `mapstructure:"type"`
+
+	// PGVector holds pgvector-specific settings.
+	PGVector PGVectorConfig `mapstructure:"pgvector"`
+
+	// Qdrant holds Qdrant-specific settings.
+	Qdrant QdrantConfig `mapstructure:"qdrant"`
+}
+
+// TracingConfig holds the OpenTelemetry tracing configuration.
+type TracingConfig struct {
+	// Enabled enables distributed tracing.
+	Enabled bool `mapstructure:"enabled"`
+	// ServiceName is the name of the service.
+	ServiceName string `mapstructure:"service_name"`
+	// OTLPEndpoint is the OTLP HTTP endpoint (e.g., "http://jaeger:4318").
+	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
+	// SamplingRate is the fraction of traces to sample (0.0 to 1.0).
+	SamplingRate float64 `mapstructure:"sampling_rate"`
+	// Insecure disables TLS for the OTLP connection.
+	Insecure bool `mapstructure:"insecure"`
+}
+
+// PGVectorConfig holds pgvector connection settings.
+type PGVectorConfig struct {
+	DSN          string `mapstructure:"dsn"`
+	TableName    string `mapstructure:"table_name"`    // default: "ai_knowledge_base"
+	VectorDims   int    `mapstructure:"vector_dims"`   // default: 1536
+	PoolSize     int    `mapstructure:"pool_size"`     // default: 10
+	HNSWEfSearch int    `mapstructure:"hnsw_ef_search"` // default: 64
+}
+
+// QdrantConfig holds Qdrant connection settings.
+type QdrantConfig struct {
+	URL        string `mapstructure:"url"`
+	APIKey     string `mapstructure:"api_key"`
+	Collection string `mapstructure:"collection"`    // default: "ai_knowledge_base"
+	VectorDims int    `mapstructure:"vector_dims"`   // default: 1536
+	Timeout    int    `mapstructure:"timeout"`       // default: 30 (seconds)
+}
+
+// StorageConfig holds the MinIO/S3 storage configuration.
+type StorageConfig struct {
+	// MinIO holds MinIO-specific settings.
+	MinIO MinIOConfig `mapstructure:"minio"`
+}
+
+// MinIOConfig holds MinIO connection settings.
+type MinIOConfig struct {
+	Endpoint  string `mapstructure:"endpoint"`
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	Bucket    string `mapstructure:"bucket"`
+	UseSSL    bool   `mapstructure:"use_ssl"`
+	Region    string `mapstructure:"region"`
 }
 
 // Load reads configuration from the given file and environment.

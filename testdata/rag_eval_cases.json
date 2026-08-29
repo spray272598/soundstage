@@ -1,0 +1,104 @@
+{
+  "cases": [
+    {
+      "query": "房间怎么开播",
+      "expected_doc_ids": ["doc-room-open", "doc-room-create"],
+      "description": "用户询问开播流程"
+    },
+    {
+      "query": "怎么关闭直播间",
+      "expected_doc_ids": ["doc-room-close"],
+      "description": "用户询问关播流程"
+    },
+    {
+      "query": "礼物价格是多少",
+      "expected_doc_ids": ["doc-gift-catalog", "doc-gift-price"],
+      "description": "用户询问礼物价格"
+    },
+    {
+      "query": "连麦怎么操作",
+      "expected_doc_ids": ["doc-miclink-invite", "doc-miclink-accept"],
+      "description": "用户询问连麦操作"
+    },
+    {
+      "query": "PK怎么发起",
+      "expected_doc_ids": ["doc-pk-create", "doc-pk-rules"],
+      "description": "用户询问PK发起流程"
+    },
+    {
+      "query": "弹幕被屏蔽了怎么办",
+      "expected_doc_ids": ["doc-moderation-rules", "doc-appeal-process"],
+      "description": "用户询问弹幕被屏蔽申诉"
+    },
+    {
+      "query": "房管有什么权限",
+      "expected_doc_ids": ["doc-moderator-permissions", "doc-mute-unmute"],
+      "description": "用户询问房管权限"
+    },
+    {
+      "query": "如何查看在线人数",
+      "expected_doc_ids": ["doc-room-stats", "doc-online-count"],
+      "description": "用户询问在线人数查看"
+    },
+    {
+      "query": "礼物排行榜怎么算",
+      "expected_doc_ids": ["doc-leaderboard-rules", "doc-gift-settlement"],
+      "description": "用户询问礼物排行榜规则"
+    },
+    {
+      "query": "违规词有哪些",
+      "expected_doc_ids": ["doc-blocked-keywords", "doc-moderation-rules"],
+      "description": "用户询问违规词列表"
+    },
+    {
+      "query": "怎么申请成为房管",
+      "expected_doc_ids": ["doc-moderator-application", "doc-moderator-permissions"],
+      "description": "用户询问房管申请流程"
+    },
+    {
+      "query": "连麦被拒绝了怎么办",
+      "expected_doc_ids": ["doc-miclink-reject", "doc-miclink-rules"],
+      "description": "用户询问连麦被拒处理"
+    },
+    {
+      "query": "PK倒计时提醒怎么设置",
+      "expected_doc_ids": ["doc-pk-countdown", "doc-pk-settings"],
+      "description": "用户询问PK倒计时设置"
+    },
+    {
+      "query": "弹幕限流是多少",
+      "expected_doc_ids": ["doc-danmaku-ratelimit", "doc-interaction-rules"],
+      "description": "用户询问弹幕限流规则"
+    },
+    {
+      "query": "怎么发送礼物",
+      "expected_doc_ids": ["doc-gift-send", "doc-gift-catalog"],
+      "description": "用户询问送礼流程"
+    },
+    {
+      "query": "房间标题怎么改",
+      "expected_doc_ids": ["doc-room-title", "doc-room-settings"],
+      "description": "用户询问修改房间标题"
+    },
+    {
+      "query": "被禁言了怎么解除",
+      "expected_doc_ids": ["doc-unmute-process", "doc-moderator-permissions"],
+      "description": "用户询问解除禁言"
+    },
+    {
+      "query": "观众怎么点赞",
+      "expected_doc_ids": ["doc-like-send", "doc-interaction-rules"],
+      "description": "用户询问点赞操作"
+    },
+    {
+      "query": "直播间数据在哪看",
+      "expected_doc_ids": ["doc-room-stats", "doc-analytics"],
+      "description": "用户询问数据查看"
+    },
+    {
+      "query": "怎么举报违规用户",
+      "expected_doc_ids": ["doc-report-process", "doc-moderation-rules"],
+      "description": "用户询问举报流程"
+    }
+  ]
+}

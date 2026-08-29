@@ -1,6 +1,9 @@
 package domain
 
-import "github.com/gorilla/websocket"
+import (
+	"context"
+	"github.com/gorilla/websocket"
+)
 
 // Session represents a single WebSocket connection in a room.
 type Session struct {
@@ -9,4 +12,6 @@ type Session struct {
 	RoomID string
 	Conn   *websocket.Conn
 	Send   chan []byte
+	Done   context.Context
+	Cancel context.CancelFunc
 }

@@ -1,0 +1,107 @@
+app:
+  name: soundstage
+  env: production
+  version: ${VERSION:-dev}
+
+http:
+  addr: ":8080"
+  read_timeout: 10s
+  write_timeout: 120s
+
+websocket:
+  addr: ":8081"
+  read_timeout: 60s
+  write_timeout: 10s
+  max_message_size: 8192
+  enable_compression: true
+  read_buffer_size: 4096
+  write_buffer_size: 4096
+
+merger:
+  worker_count: 4
+  channel_size: 1024
+  max_batch_size: 100
+  max_delay: 10ms
+
+mysql:
+  dsn: "root:root@tcp(mysql:3306)/soundstage?charset=utf8mb4&parseTime=True&loc=Local"
+  max_open: 25
+  max_idle: 5
+  max_lifetime: "5m"
+  max_idle_time: "1m"
+
+redis:
+  addr: "redis:6379"
+  db: 0
+  pool_size: 20
+
+hub:
+  mode: "redis"
+  gateway_id: ""
+
+kafka:
+  brokers:
+    - "kafka:9092"
+  topic_prefix: "soundstage."
+  consumer_count: 3
+
+asynq:
+  redis_addr: "redis:6379"
+
+interaction:
+  danmaku_rate_limit: 10
+  danmaku_rate_window: 1s
+  moderation_keywords:
+    - "广告"
+    - "spam"
+    - "fuck"
+  gift_idempotency_ttl: 24h
+
+miclink:
+  pk_duration: 5m
+  pk_countdown_notice: 10s
+  lock_ttl: 30s
+
+metrics:
+  addr: ":9091"
+  path: "/metrics"
+
+log:
+  level: info
+  format: json
+
+ai:
+  provider: openai
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"
+  api_key: ""
+  mock_on_empty_key: true
+  embedding_model: "text-embedding-3-small"
+  embedding_base_url: "https://api.openai.com/v1"
+  moderation_keywords:
+    - "广告"
+    - "spam"
+  rag_top_k: 3
+  agent_max_rounds: 8
+  agent_timeout: 60s
+  vector_store:
+    type: "pgvector"
+    pgvector:
+      dsn: "postgres://postgres:postgres@pgvector:5432/soundstage?sslmode=disable"
+      table_name: "ai_knowledge_base"
+      vector_dims: 1536
+      pool_size: 10
+      hnsw_ef_search: 64
+    qdrant:
+      url: "http://qdrant:6333"
+      api_key: ""
+      collection: "ai_knowledge_base"
+      vector_dims: 1536
+      timeout: 30
+
+tracing:
+  enabled: true
+  service_name: "soundstage"
+  otlp_endpoint: "http://jaeger:4318"
+  sampling_rate: 0.1
+  insecure: true

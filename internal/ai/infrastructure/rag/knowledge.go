@@ -8,20 +8,29 @@ import (
 	"github.com/spray272598/soundstage/internal/ai/infrastructure/llm"
 )
 
-// Service is the RAG knowledge base: it embeds documents into a MemIndex and
+// Service is the RAG knowledge base: it embeds documents into a VectorStore and
 // retrieves the most relevant chunks for a query.
 type Service struct {
 	embedder llm.Embedder
-	index    *MemIndex
+	index    aidomain.VectorStore
 	// minScore filters near-irrelevant hits so the model isn't fed noise.
 	minScore float32
 }
 
-// NewService builds a RAG service from an embedder.
+// NewService builds a RAG service from an embedder (uses in-memory MemIndex).
 func NewService(embedder llm.Embedder) *Service {
 	return &Service{
 		embedder: embedder,
 		index:    NewMemIndex(),
+		minScore: 0.1,
+	}
+}
+
+// NewServiceWithVectorStore builds a RAG service with a custom VectorStore (e.g., pgvector).
+func NewServiceWithVectorStore(embedder llm.Embedder, index aidomain.VectorStore) *Service {
+	return &Service{
+		embedder: embedder,
+		index:    index,
 		minScore: 0.1,
 	}
 }
@@ -35,7 +44,7 @@ func (s *Service) Index(ctx context.Context, id, title, text string) error {
 	if len(vecs) == 0 {
 		return fmt.Errorf("rag index: empty embedding")
 	}
-	return s.index.Upsert(ctx, []Point{{
+	return s.index.Upsert(ctx, []aidomain.VectorPoint{{
 		ID:      id,
 		Vector:  vecs[0],
 		Payload: map[string]any{"title": title, "text": text},
@@ -72,7 +81,7 @@ func (s *Service) Query(ctx context.Context, query string, topK int) ([]aidomain
 
 // Count returns the number of indexed chunks.
 func (s *Service) Count(ctx context.Context) (int, error) {
-	return s.index.Count(ctx), nil
+	return s.index.Count(ctx)
 }
 
 func titleOf(p map[string]any) string {

@@ -2,17 +2,21 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	aidomain "github.com/spray272598/soundstage/internal/ai/domain"
 	aiapplication "github.com/spray272598/soundstage/internal/ai/application"
 	aiagent "github.com/spray272598/soundstage/internal/ai/infrastructure/agent"
 	aillm "github.com/spray272598/soundstage/internal/ai/infrastructure/llm"
 	airag "github.com/spray272598/soundstage/internal/ai/infrastructure/rag"
 	aitransport "github.com/spray272598/soundstage/internal/ai/transport"
+	aivectorstore "github.com/spray272598/soundstage/internal/ai/infrastructure/vectorstore"
+	connMerger "github.com/spray272598/soundstage/internal/connection/infrastructure/merger"
 	"github.com/spray272598/soundstage/internal/connection/application"
 	connDomain "github.com/spray272598/soundstage/internal/connection/domain"
 	conninfra "github.com/spray272598/soundstage/internal/connection/infrastructure"
@@ -33,6 +37,7 @@ import (
 	miclinktransport "github.com/spray272598/soundstage/internal/miclink/transport"
 	"github.com/spray272598/soundstage/internal/pkg/config"
 	"github.com/spray272598/soundstage/internal/pkg/id"
+	"github.com/spray272598/soundstage/internal/pkg/tracing"
 	pkgkafka "github.com/spray272598/soundstage/internal/pkg/kafka"
 	"github.com/spray272598/soundstage/internal/pkg/logger"
 	"github.com/spray272598/soundstage/internal/pkg/metrics"
@@ -47,18 +52,19 @@ import (
 
 // Application holds the runtime dependencies of the modular monolith.
 type Application struct {
-	Config       *config.Config
-	DB           *gorm.DB
-	Redis        *pkgredis.Client
-	Hub          connDomain.Hub
-	Producer     pkgkafka.Producer
-	Consumer     pkgkafka.Consumer
-	Asynq        *asynq.Client
-	RoomHandler  *roomtransport.RoomHandler
-	WSHandler    *conntransport.WSHandler
-	InterHandler *interactiontransport.InteractionHandler
-	MicHandler   *miclinktransport.MiclinkHandler
-	AIHandler    *aitransport.Handler
+	Config        *config.Config
+	DB            *gorm.DB
+	Redis         *pkgredis.Client
+	Hub           connDomain.Hub
+	Merger        *connMerger.Merger
+	Producer      pkgkafka.Producer
+	Consumer      pkgkafka.Consumer
+	Asynq         *asynq.Client
+	RoomHandler   *roomtransport.RoomHandler
+	WSHandler     *conntransport.WSHandler
+	InterHandler  *interactiontransport.InteractionHandler
+	MicHandler    *miclinktransport.MiclinkHandler
+	AIHandler     *aitransport.Handler
 
 	ingestConsumer  *interactionapp.IngestConsumer
 	miclinkConsumer *kafka.Consumer
@@ -71,6 +77,21 @@ type Application struct {
 
 // New builds and wires the application.
 func New(cfg *config.Config) (*Application, error) {
+	// Initialize tracing
+	tp, err := tracing.Init(context.Background(), tracing.Config{
+		Enabled:       cfg.Tracing.Enabled,
+		ServiceName:   cfg.Tracing.ServiceName,
+		OTLPEndpoint:  cfg.Tracing.OTLPEndpoint,
+		SamplingRate:  cfg.Tracing.SamplingRate,
+		Insecure:      cfg.Tracing.Insecure,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init tracing: %w", err)
+	}
+	defer func() {
+		_ = tp.Shutdown(context.Background())
+	}()
+
 	if err := logger.Init(cfg.Log.Level, cfg.Log.Format); err != nil {
 		return nil, err
 	}
@@ -108,6 +129,19 @@ func New(cfg *config.Config) (*Application, error) {
 	producer := kafka.NewProducer(cfg.Kafka.Brokers)
 	broadcastTopic := cfg.Kafka.TopicPrefix + "broadcast"
 	ingestTopic := cfg.Kafka.TopicPrefix + "ingest"
+
+	// Create message merger for batching WebSocket messages
+	merger := connMerger.NewMerger(
+		&mergerSender{
+			producer:      producer,
+			broadcastTopic: broadcastTopic,
+			ingestTopic:   ingestTopic,
+			hub:           hub,
+		},
+		cfg.Merger,
+	)
+	merger.Start(context.Background())
+
 	connSvc := application.NewConnectionService(hub, producer, ingestTopic, cfg.WebSocket)
 	wsHandler := conntransport.NewWSHandler(connSvc, cfg.WebSocket)
 	consumer := kafka.NewConsumer(cfg.Kafka.Brokers, "soundstage-gateway").
@@ -152,7 +186,30 @@ func New(cfg *config.Config) (*Application, error) {
 	realLLM := cfg.AI.APIKey != ""
 	aiLLM := aillm.NewFromConfig(cfg.AI.APIKey, cfg.AI.BaseURL, cfg.AI.Model, cfg.AI.MockOnEmptyKey)
 	aiEmbedder := aillm.NewEmbedderFromConfig(cfg.AI.APIKey, cfg.AI.EmbeddingBaseURL, cfg.AI.EmbeddingModel)
-	aiKB := airag.NewService(aiEmbedder)
+
+	// Create KnowledgeBase with configured VectorStore (memory/pgvector/qdrant)
+	// Convert config.VectorStoreConfig to domain.VectorStoreConfig
+	vectorStoreCfg := aidomain.VectorStoreConfig{
+		Type: cfg.AI.VectorStore.Type,
+		PGVector: aidomain.PGVectorConfig{
+			DSN:          cfg.AI.VectorStore.PGVector.DSN,
+			TableName:    cfg.AI.VectorStore.PGVector.TableName,
+			VectorDims:   cfg.AI.VectorStore.PGVector.VectorDims,
+			PoolSize:     cfg.AI.VectorStore.PGVector.PoolSize,
+			HNSWEfSearch: cfg.AI.VectorStore.PGVector.HNSWEfSearch,
+		},
+		Qdrant: aidomain.QdrantConfig{
+			URL:        cfg.AI.VectorStore.Qdrant.URL,
+			APIKey:     cfg.AI.VectorStore.Qdrant.APIKey,
+			Collection: cfg.AI.VectorStore.Qdrant.Collection,
+			VectorDims: cfg.AI.VectorStore.Qdrant.VectorDims,
+			Timeout:    cfg.AI.VectorStore.Qdrant.Timeout,
+		},
+	}
+	aiKB, err := aivectorstore.NewKnowledgeBaseService(context.Background(), vectorStoreCfg, aiEmbedder)
+	if err != nil {
+		return nil, fmt.Errorf("create knowledge base: %w", err)
+	}
 	if err := airag.SeedDefaultKnowledge(context.Background(), aiKB); err != nil {
 		logger.L().Warn("seed default knowledge failed", zap.Error(err))
 	}
@@ -224,6 +281,7 @@ func New(cfg *config.Config) (*Application, error) {
 		DB:              db,
 		Redis:           rdb,
 		Hub:             hub,
+		Merger:          merger,
 		Producer:        producer,
 		Consumer:        consumer,
 		Asynq:           asynqClient,
@@ -306,6 +364,7 @@ func (a *Application) Run(ctx context.Context) error {
 	// HTTP API server.
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(tracing.GinMiddleware(a.Config.Tracing.ServiceName))
 	a.RoomHandler.Register(router)
 	a.WSHandler.Register(router)
 	a.InterHandler.Register(router)
@@ -344,6 +403,9 @@ func (a *Application) Shutdown(ctx context.Context) error {
 	a.asynqServer.Shutdown()
 	if a.batchPersister != nil {
 		a.batchPersister.Stop()
+	}
+	if a.Merger != nil {
+		a.Merger.Stop()
 	}
 	_ = a.Asynq.Close()
 	_ = a.Consumer.Close()
@@ -403,4 +465,33 @@ func newDB(cfg *config.MySQLConfig) (*gorm.DB, error) {
 		sqlDB.SetConnMaxIdleTime(d)
 	}
 	return db, nil
+}
+
+// mergerSender implements connMerger.Sender for the message merger.
+type mergerSender struct {
+	producer       pkgkafka.Producer
+	broadcastTopic string
+	ingestTopic    string
+	hub            connDomain.Hub
+}
+
+func (s *mergerSender) SendToRoom(ctx context.Context, roomID string, msg []byte) error {
+	// Wrap in broadcast envelope for the Kafka broadcaster
+	env := map[string]any{
+		"room_id": roomID,
+		"type":    "batch",
+		"payload": msg,
+	}
+	data, _ := json.Marshal(env)
+	return s.producer.Publish(ctx, s.broadcastTopic, roomID, data)
+}
+
+func (s *mergerSender) Broadcast(ctx context.Context, msg []byte) error {
+	// Broadcast to all rooms - send to ingest topic for processing
+	env := map[string]any{
+		"type":    "broadcast",
+		"payload": msg,
+	}
+	data, _ := json.Marshal(env)
+	return s.producer.Publish(ctx, s.ingestTopic, "", data)
 }

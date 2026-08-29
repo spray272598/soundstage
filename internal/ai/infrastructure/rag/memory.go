@@ -8,19 +8,14 @@ import (
 	"context"
 	"sort"
 	"sync"
+
+	aidomain "github.com/spray272598/soundstage/internal/ai/domain"
 )
 
-// Point is one vector record.
+// Point is one vector record (internal representation).
 type Point struct {
 	ID      string
 	Vector  []float32
-	Payload map[string]any
-}
-
-// Hit is a scored search result (descending similarity).
-type Hit struct {
-	ID      string
-	Score   float32
 	Payload map[string]any
 }
 
@@ -35,23 +30,25 @@ func NewMemIndex() *MemIndex {
 	return &MemIndex{collection: make(map[string]Point)}
 }
 
-// Upsert inserts or replaces points by id.
-func (m *MemIndex) Upsert(_ context.Context, points []Point) error {
+// --- VectorStore interface implementation ---
+
+// Upsert implements aidomain.VectorStore.Upsert
+func (m *MemIndex) Upsert(ctx context.Context, points []aidomain.VectorPoint) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, p := range points {
-		m.collection[p.ID] = p
+		m.collection[p.ID] = Point{ID: p.ID, Vector: p.Vector, Payload: p.Payload}
 	}
 	return nil
 }
 
-// Search returns the topK most similar points to query.
-func (m *MemIndex) Search(_ context.Context, query []float32, topK int) ([]Hit, error) {
+// Search implements aidomain.VectorStore.Search
+func (m *MemIndex) Search(ctx context.Context, query []float32, topK int) ([]aidomain.VectorHit, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	hits := make([]Hit, 0, len(m.collection))
+	hits := make([]aidomain.VectorHit, 0, len(m.collection))
 	for _, p := range m.collection {
-		hits = append(hits, Hit{ID: p.ID, Score: cosine(query, p.Vector), Payload: p.Payload})
+		hits = append(hits, aidomain.VectorHit{ID: p.ID, Score: cosine(query, p.Vector), Payload: p.Payload})
 	}
 	sort.Slice(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
 	if topK > 0 && len(hits) > topK {
@@ -60,20 +57,30 @@ func (m *MemIndex) Search(_ context.Context, query []float32, topK int) ([]Hit, 
 	return hits, nil
 }
 
-// Count returns the number of indexed points.
-func (m *MemIndex) Count(_ context.Context) int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.collection)
-}
-
-// Delete removes a point by id.
-func (m *MemIndex) Delete(_ context.Context, id string) error {
+// Delete implements aidomain.VectorStore.Delete
+func (m *MemIndex) Delete(ctx context.Context, ids []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.collection, id)
+	for _, id := range ids {
+		delete(m.collection, id)
+	}
 	return nil
 }
+
+// Count implements aidomain.VectorStore.Count
+func (m *MemIndex) Count(ctx context.Context) (int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.collection), nil
+}
+
+// Close implements aidomain.VectorStore.Close (no-op for in-memory)
+func (m *MemIndex) Close() error {
+	return nil
+}
+
+// Compile-time check.
+var _ aidomain.VectorStore = (*MemIndex)(nil)
 
 func cosine(a, b []float32) float32 {
 	n := len(a)

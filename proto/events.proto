@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package soundstage;
+
+// Room events
+message RoomCreated {
+  string room_id = 1;
+  string anchor_id = 2;
+  string title = 3;
+  int64 created_at = 4;
+}
+
+message RoomOpened {
+  string room_id = 1;
+  int64 opened_at = 2;
+}
+
+message RoomClosed {
+  string room_id = 1;
+  int64 closed_at = 2;
+}
+
+// Interaction events
+message Danmaku {
+  string id = 1;
+  string room_id = 2;
+  string user_id = 3;
+  string content = 4;
+  int64 created_at = 5;
+}
+
+message Gift {
+  string order_id = 1;
+  string sender_id = 2;
+  string gift_id = 3;
+  string gift_name = 4;
+  int32 count = 5;
+  int64 total_amount = 6;
+  int64 created_at = 7;
+}
+
+message Like {
+  string user_id = 1;
+  int64 count = 2;
+  int64 created_at = 3;
+}
+
+// WebSocket message envelope
+message WSMessage {
+  string type = 1;
+  bytes payload = 2;
+}
+
+// Broadcast envelope for room messages
+message BroadcastEnvelope {
+  string room_id = 1;
+  string type = 2;
+  string to = 3;
+  bytes payload = 4;
+}
+
+// Inbound envelope from client
+message InboundEnvelope {
+  string type = 1;
+  string room_id = 2;
+  string user_id = 3;
+  bytes payload = 4;
+}
+
+// Danmaku payload
+message DanmakuPayload {
+  string text = 1;
+}
+
+// Gift payload
+message GiftPayload {
+  string gift_id = 1;
+  int32 count = 2;
+  string idempotency_key = 3;
+}
+
+// Like payload (empty)
+message LikePayload {}
+
+// Signal payload for WebRTC
+message SignalPayload {
+  string target_user_id = 1;
+  string sdp = 2;
+  string candidate = 3;
+  string type = 4; // offer, answer, ice
+}

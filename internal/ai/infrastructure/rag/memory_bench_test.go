@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	aidomain "github.com/spray272598/soundstage/internal/ai/domain"
 	"github.com/spray272598/soundstage/internal/ai/infrastructure/llm"
 )
 
@@ -23,9 +24,9 @@ func benchVec(seed int) []float32 {
 
 func benchIndex(n int) *MemIndex {
 	idx := NewMemIndex()
-	pts := make([]Point, 0, n)
+	pts := make([]aidomain.VectorPoint, 0, n)
 	for i := 0; i < n; i++ {
-		pts = append(pts, Point{ID: fmt.Sprintf("p-%d", i), Vector: benchVec(i)})
+		pts = append(pts, aidomain.VectorPoint{ID: fmt.Sprintf("p-%d", i), Vector: benchVec(i)})
 	}
 	_ = idx.Upsert(context.Background(), pts)
 	return idx

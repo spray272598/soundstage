@@ -4,12 +4,13 @@ import (
 	"context"
 	"testing"
 
+	aidomain "github.com/spray272598/soundstage/internal/ai/domain"
 	aillm "github.com/spray272598/soundstage/internal/ai/infrastructure/llm"
 )
 
 func TestMemIndexSearch(t *testing.T) {
 	idx := NewMemIndex()
-	_ = idx.Upsert(context.Background(), []Point{
+	_ = idx.Upsert(context.Background(), []aidomain.VectorPoint{
 		{ID: "a", Vector: []float32{1, 0, 0}},
 		{ID: "b", Vector: []float32{0, 1, 0}},
 		{ID: "c", Vector: []float32{0, 0, 1}},

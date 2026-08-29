@@ -240,5 +240,10 @@ func (h *RedisHub) Close() error {
 	return h.Stop()
 }
 
+// Shutdown implements domain.Hub.
+func (h *RedisHub) Shutdown(ctx context.Context) error {
+	return h.localHub.Shutdown(ctx)
+}
+
 // Compile-time check.
 var _ domain.Hub = (*RedisHub)(nil)

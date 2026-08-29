@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -62,12 +63,15 @@ func (h *WSHandler) handle(c *gin.Context) {
 	// Set read limit to prevent OOM from large messages
 	conn.SetReadLimit(h.cfg.MaxMessageSize)
 
+	ctx, cancel := context.WithCancel(c.Request.Context())
 	session := &domain.Session{
 		ID:     id.New(),
 		UserID: userID,
 		RoomID: roomID,
 		Conn:   conn,
 		Send:   make(chan []byte, 256),
+		Done:   ctx,
+		Cancel: cancel,
 	}
 	h.svc.Handle(session)
 }

@@ -1,0 +1,60 @@
+{
+  "cases": [
+    {
+      "name": "simple_greeting",
+      "message": "你好，房管",
+      "room_id": "eval-room",
+      "user_id": "eval-user-1",
+      "description": "简单问候，预期快速回复"
+    },
+    {
+      "name": "rule_query",
+      "message": "房间规则里有什么不能说的？",
+      "room_id": "eval-room",
+      "user_id": "eval-user-2",
+      "description": "查询规则，需要 RAG 检索"
+    },
+    {
+      "name": "leaderboard_query",
+      "message": "今天礼物榜第一是谁？",
+      "room_id": "eval-room",
+      "user_id": "eval-user-3",
+      "description": "查询排行榜，需要调用工具"
+    },
+    {
+      "name": "room_status_query",
+      "message": "现在房间多少人在看？",
+      "room_id": "eval-room",
+      "user_id": "eval-user-4",
+      "description": "查询房间状态，需要调用工具"
+    },
+    {
+      "name": "pk_status_query",
+      "message": "PK比分多少了？",
+      "room_id": "eval-room",
+      "user_id": "eval-user-5",
+      "description": "查询PK状态，需要调用工具"
+    },
+    {
+      "name": "moderation_request",
+      "message": "把那个刷屏的用户禁言一下",
+      "room_id": "eval-room",
+      "user_id": "eval-user-6",
+      "description": "请求禁言，需要工具调用并确认参数"
+    },
+    {
+      "name": "complex_query",
+      "message": "主播今天开播多久了？礼物榜前三是谁？有没有连麦？",
+      "room_id": "eval-room",
+      "user_id": "eval-user-7",
+      "description": "复合查询，多工具调用"
+    },
+    {
+      "name": "knowledge_query",
+      "message": "怎么申请成为房管？",
+      "room_id": "eval-room",
+      "user_id": "eval-user-8",
+      "description": "知识库查询，需要 RAG 检索"
+    }
+  ]
+}

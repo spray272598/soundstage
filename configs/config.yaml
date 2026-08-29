@@ -19,6 +19,28 @@ websocket:
   read_buffer_size: 4096
   write_buffer_size: 4096
 
+merger:
+  # Number of merge workers for room messages (consistent hashing by room ID)
+  worker_count: 4
+  # Input channel buffer size
+  channel_size: 1024
+  # Maximum messages to batch before flushing
+  max_batch_size: 100
+  # Maximum time to wait before flushing partial batch
+  max_delay: 10ms
+
+tracing:
+  # Enable distributed tracing
+  enabled: true
+  # Service name for tracing
+  service_name: "soundstage"
+  # OTLP HTTP endpoint (Jaeger collector)
+  otlp_endpoint: "http://jaeger:4318"
+  # Sampling rate (0.0 to 1.0)
+  sampling_rate: 0.1
+  # Disable TLS for OTLP connection
+  insecure: true
+
 mysql:
   dsn: "root:root@tcp(localhost:3306)/soundstage?charset=utf8mb4&parseTime=True&loc=Local"
   max_open: 25
@@ -30,6 +52,8 @@ redis:
   addr: "localhost:6379"
   db: 0
   pool_size: 20
+  # Note: maxmemory is configured in docker-compose.yml (512mb with allkeys-lru)
+  # For production, set maxmemory in Redis config to prevent OOM
 
 hub:
   # mode: "memory" (single instance) or "redis" (multi-gateway)
@@ -75,9 +99,34 @@ ai:
   mock_on_empty_key: true
   embedding_model: "text-embedding-3-small"
   embedding_base_url: "https://api.openai.com/v1"
+  vector_store:
+    # type: "memory" (default), "pgvector", "qdrant"
+    type: "memory"
+    pgvector:
+      dsn: "postgres://postgres:postgres@localhost:5432/soundstage?sslmode=disable"
+      table_name: "ai_knowledge_base"
+      vector_dims: 1536
+      pool_size: 10
+      hnsw_ef_search: 64
+    qdrant:
+      url: "http://localhost:6333"
+      api_key: ""
+      collection: "ai_knowledge_base"
+      vector_dims: 1536
+      timeout: 30
   moderation_keywords:
     - "广告"
     - "spam"
   rag_top_k: 3
   agent_max_rounds: 8
   agent_timeout: 60s
+
+storage:
+  # MinIO configuration for media storage
+  minio:
+    endpoint: "minio:9000"
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    bucket: "soundstage"
+    use_ssl: false
+    region: "us-east-1"

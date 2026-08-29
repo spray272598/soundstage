@@ -35,6 +35,16 @@ func NewConnectionService(hub domain.Hub, producer pkgkafka.Producer, ingestTopi
 
 // Handle runs the read and write pumps for a session.
 func (s *ConnectionService) Handle(session *domain.Session) {
+	// Record connection start
+	startTime := time.Now()
+	metrics.WSConnectionTotal.WithLabelValues(session.RoomID, "established").Inc()
+
+	// Track connection duration
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		metrics.WSConnectionDurationSeconds.WithLabelValues(session.RoomID, "normal").Observe(duration)
+	}()
+
 	s.hub.Register(session)
 
 	go s.writePump(session)
@@ -62,37 +72,43 @@ func (s *ConnectionService) readPump(session *domain.Session) {
 		return nil
 	})
 
+	done := session.Done
 	for {
-		_, payload, err := session.Conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				logger.L().Warn("websocket unexpected close",
-					zap.Error(err),
-					zap.String("session", session.ID),
-					zap.String("room", session.RoomID))
+		select {
+		case <-done.Done():
+			return
+		default:
+			_, payload, err := session.Conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					logger.L().Warn("websocket unexpected close",
+						zap.Error(err),
+						zap.String("session", session.ID),
+						zap.String("room", session.RoomID))
+				}
+				break
 			}
-			break
-		}
 
-		var msg domain.Message
-		if err := json.Unmarshal(payload, &msg); err != nil {
-			continue
-		}
+			var msg domain.Message
+			if err := json.Unmarshal(payload, &msg); err != nil {
+				continue
+			}
 
-		metrics.WSMessagesTotal.WithLabelValues(msg.Type, "in").Inc()
+			metrics.WSMessagesTotal.WithLabelValues(msg.Type, "in").Inc()
 
-		switch msg.Type {
-		case "heartbeat":
-			// Pong handler already refreshed the read deadline.
-		case "chat", "gift", "like":
-			// Hand interactive messages to the interaction context through the
-			// event bus. This keeps the gateway decoupled and lets the same
-			// processing path serve both WebSocket and REST entry points.
-			s.publishIngest(session, msg.Type, msg.Payload)
-		case "signal":
-			// Hand WebRTC co-host (mic-link) signaling to the miclink context
-			// through the same event bus (a separate consumer group).
-			s.publishIngest(session, msg.Type, msg.Payload)
+			switch msg.Type {
+			case "heartbeat":
+				// Pong handler already refreshed the read deadline.
+			case "chat", "gift", "like":
+				// Hand interactive messages to the interaction context through the
+				// event bus. This keeps the gateway decoupled and lets the same
+				// processing path serve both WebSocket and REST entry points.
+				s.publishIngest(session, msg.Type, msg.Payload)
+			case "signal":
+				// Hand WebRTC co-host (mic-link) signaling to the miclink context
+				// through the same event bus (a separate consumer group).
+				s.publishIngest(session, msg.Type, msg.Payload)
+			}
 		}
 	}
 }
@@ -113,18 +129,28 @@ func (s *ConnectionService) writePump(session *domain.Session) {
 		session.Conn.Close()
 	}()
 
+	done := session.Done
 	for {
 		select {
+		case <-done.Done():
+			// Graceful shutdown: close the WebSocket connection
+			_ = session.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "server shutting down"))
+			return
 		case msg, ok := <-session.Send:
 			session.Conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if !ok {
 				_ = session.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
+			sendStart := time.Now()
 			if err := session.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
 			metrics.WSMessagesTotal.WithLabelValues("broadcast", "out").Inc()
+			// Record send latency
+			metrics.WSConnectionSendLatencySeconds.WithLabelValues(session.RoomID).Observe(time.Since(sendStart).Seconds())
+			// Record queue depth (approximate)
+			metrics.WSConnectionSendQueueDepth.WithLabelValues(session.RoomID, session.ID).Set(float64(len(session.Send)))
 
 		case <-ticker.C:
 			session.Conn.SetWriteDeadline(time.Now().Add(writeTimeout))

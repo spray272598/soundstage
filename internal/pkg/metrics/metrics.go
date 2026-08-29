@@ -141,6 +141,65 @@ var (
 		Help:      "LLM call latency in seconds",
 		Buckets:   []float64{0.2, 0.5, 1, 2, 5, 10, 30},
 	}, []string{"kind"})
+
+	// MergerPendingTotal tracks pending messages in the merger queue.
+	MergerPendingTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "soundstage",
+		Name:      "merger_pending_total",
+		Help:      "Messages pending in merger queue by type",
+	}, []string{"type"})
+
+	// MergerChannelFullTotal counts messages dropped due to full merger channel.
+	MergerChannelFullTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "merger_channel_full_total",
+		Help:      "Messages dropped due to full merger channel by type",
+	}, []string{"type"})
+
+	// MergerRoomTotal counts messages batched for room delivery.
+	MergerRoomTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "merger_room_total",
+		Help:      "Messages batched for room delivery by result",
+	}, []string{"result"})
+
+	// MergerBroadcastTotal counts messages batched for broadcast delivery.
+	MergerBroadcastTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "merger_broadcast_total",
+		Help:      "Messages batched for broadcast delivery by result",
+	}, []string{"result"})
+
+	// Per-connection metrics
+	// WSConnectionSendQueueDepth tracks the depth of the send queue per connection.
+	WSConnectionSendQueueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "soundstage",
+		Name:      "websocket_connection_send_queue_depth",
+		Help:      "Depth of the WebSocket send queue per connection",
+	}, []string{"room_id", "session_id"})
+
+	// WSConnectionSendLatencySeconds observes the latency of sending messages per connection.
+	WSConnectionSendLatencySeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "soundstage",
+		Name:      "websocket_connection_send_latency_seconds",
+		Help:      "Latency of sending WebSocket messages per connection",
+		Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0},
+	}, []string{"room_id"})
+
+	// WSConnectionTotal counts total connections established.
+	WSConnectionTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "soundstage",
+		Name:      "websocket_connection_total",
+		Help:      "Total WebSocket connections established",
+	}, []string{"room_id", "result"})
+
+	// WSConnectionDurationSeconds observes connection lifetime.
+	WSConnectionDurationSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "soundstage",
+		Name:      "websocket_connection_duration_seconds",
+		Help:      "WebSocket connection lifetime in seconds",
+		Buckets:   []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+	}, []string{"room_id", "close_reason"})
 )
 
 func init() {
@@ -162,5 +221,13 @@ func init() {
 		AIRagQueriesTotal,
 		AISSEConnections,
 		AILatencySeconds,
+		MergerPendingTotal,
+		MergerChannelFullTotal,
+		MergerRoomTotal,
+		MergerBroadcastTotal,
+		WSConnectionSendQueueDepth,
+		WSConnectionSendLatencySeconds,
+		WSConnectionTotal,
+		WSConnectionDurationSeconds,
 	)
 }
